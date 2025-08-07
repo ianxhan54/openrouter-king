@@ -1,0 +1,6 @@
+# 核心依赖 - OpenRouter扫描必需
+python-dotenv>=1.1.1
+requests>=2.32.4
+
+# 可选依赖 - 仅在需要Gemini支持时安装
+# google-generativeai>=0.8.5

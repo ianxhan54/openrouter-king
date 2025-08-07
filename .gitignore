@@ -1,0 +1,100 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+*.pyo
+*.pyd
+*.so
+build/
+dist/
+wheels/
+*.egg-info
+*.egg
+
+# Virtual environments
+.venv/
+.env/
+venv/
+env/
+ENV/
+
+# Environment variables and configuration
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows system files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+logs/
+log/
+tmp/
+temp/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Docker
+.dockerignore
+
+# Project-specific data directories
+data/
+keys/
+results/
+
+# ⚠️ 重要：敏感文件 - 绝对不要上传！
+keys_valid_*.txt
+keys_detail_info_*.json
+checkpoint.json
+checkpoint_backup.json
+scanned_shas.txt
+queries.txt
+!queries.example
+hajimi_king.db
+
+# 个人配置文件
+.env.*
+!.env.example
+!.env.optimized
+
+# Backup files
+*.bak
+*.backup
+*.orig

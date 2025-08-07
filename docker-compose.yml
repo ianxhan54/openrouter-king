@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  hajimi-king:
+    image: hajimi-king:0.0.1
+    container_name: hajimi-king
+    restart: unless-stopped
+    network_mode: host
+    # 环境变量
+    env_file:
+      - .env
+    
+    # 数据卷挂载
+    volumes:
+      - ./data:/app/data
