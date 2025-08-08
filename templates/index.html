@@ -11,18 +11,36 @@
 <body>
     <div class="container">
         <!-- 头部 -->
-        <header>
-            <h1>🔍 OpenRouter Scanner</h1>
+        <header class="hero">
+            <h1 class="neon">🔍 OpenRouter Scanner</h1>
             <div class="status-bar">
-                <span class="status-indicator" id="statusIndicator">
+                <span class="status-indicator neon" id="statusIndicator">
                     <span class="status-dot"></span>
-                    <span id="statusText">未运行</span>
+                    <span id="statusText" class="neon">未运行</span>
                 </span>
                 <div class="stats">
                     <span>发现Keys: <strong id="totalKeys">0</strong></span>
                     <span>有效Keys: <strong id="validKeys">0</strong></span>
                     <span>总余额: $<strong id="totalBalance">0.00</strong></span>
+                    <span>累计扫描Keys: <strong id="scannedTotal">0</strong></span>
                 </div>
+                </div>
+                <div class="stats" style="margin-top:8px;">
+                    <span>Token 可用性: <strong id="tokensOk">0</strong>/<strong id="tokensTotal">0</strong>（限流: <strong id="tokensLimited">0</strong>）</span>
+                </div>
+                <div class="stats" style="margin-top:8px;">
+                    <span>运行时间: <strong id="appUptime">0:00:00</strong> / 扫描运行: <strong id="scanUptime">0:00:00</strong></span>
+                </div>
+
+                <div class="stats" style="margin-top:8px;">
+                    <span>扫描速率: <strong id="scanRate">0</strong> keys/min</span>
+                </div>
+
+
+                <div class="stats" style="margin-top:8px;">
+                    <canvas id="tokenRing" width="110" height="110" style="background:transparent"></canvas>
+                </div>
+
             </div>
         </header>
 
@@ -83,6 +101,12 @@
                     <h2>📊 统计概览</h2>
                     <canvas id="balanceChart"></canvas>
                 </div>
+                <!-- 趋势图表 -->
+                <div class="card chart-card">
+                    <h2>📈 扫描趋势</h2>
+                    <canvas id="trendChart"></canvas>
+                </div>
+
 
                 <!-- Keys列表 -->
                 <div class="card">
@@ -104,6 +128,10 @@
                             <option value="valid">有效</option>
                             <option value="balance">有余额</option>
                             <option value="free">免费层</option>
+                            <option value="type:openrouter">仅 OpenRouter</option>
+                            <option value="type:openai">仅 OpenAI</option>
+                            <option value="type:anthropic">仅 Anthropic</option>
+                            <option value="type:gemini">仅 Gemini</option>
                         </select>
                     </div>
                     <div class="keys-list" id="keysList">

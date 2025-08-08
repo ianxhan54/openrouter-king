@@ -5,18 +5,31 @@ let state = {
   keys: [],
   filteredKeys: [],
   running: false,
+  stats: { by_type: {}, scanned_keys_total: 0, openrouter_usage_total: 0 },
   charts: {
     balanceChart: null,
+    trendChart: null,
+    tokenRing: null,
+
   },
 };
 
 // DOM refs
+
+
 const el = {
   statusDot: () => document.querySelector('#statusIndicator .status-dot'),
   statusText: () => document.getElementById('statusText'),
   totalKeys: () => document.getElementById('totalKeys'),
   validKeys: () => document.getElementById('validKeys'),
   totalBalance: () => document.getElementById('totalBalance'),
+  scannedTotal: () => document.getElementById('scannedTotal'),
+  tokensOk: () => document.getElementById('tokensOk'),
+  tokensTotal: () => document.getElementById('tokensTotal'),
+  tokensLimited: () => document.getElementById('tokensLimited'),
+  appUptime: () => document.getElementById('appUptime'),
+  scanUptime: () => document.getElementById('scanUptime'),
+  scanRate: () => document.getElementById('scanRate'),
   startBtn: () => document.getElementById('startBtn'),
   stopBtn: () => document.getElementById('stopBtn'),
   githubTokens: () => document.getElementById('githubTokens'),
@@ -26,7 +39,11 @@ const el = {
   logsContainer: () => document.getElementById('logsContainer'),
   keysList: () => document.getElementById('keysList'),
   keySearch: () => document.getElementById('keySearch'),
+  tokenRing: () => document.getElementById('tokenRing'),
+
   keyFilter: () => document.getElementById('keyFilter'),
+  trendCanvas: () => document.getElementById('trendChart'),
+
   notification: () => document.getElementById('notification'),
   keyModal: () => document.getElementById('keyModal'),
   keyDetails: () => document.getElementById('keyDetails'),
@@ -113,6 +130,64 @@ async function saveConfig() {
     }
   } catch (e) {
     showNotification('保存出错 ❌', 'error');
+async function refreshStats() {
+  try {
+    const res = await fetch('/api/stats');
+    const s = await res.json();
+    state.stats = s;
+    // 更新 Provider 分组图
+    updateProviderChart();
+    // 更新趋势图
+    updateTrendChart();
+    // 更新头部累计扫描数量
+    if (el.scannedTotal()) el.scannedTotal().textContent = String(s.scanned_keys_total || 0);
+    // 运行时长显示
+    const fmt = (s)=>{
+      const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = s%60;
+      const pad = n => String(n).padStart(2,'0');
+      return `${h}:${pad(m)}:${pad(ss)}`;
+    };
+    if (el.appUptime()) el.appUptime().textContent = fmt(Number(s.app_uptime_s||0));
+    if (el.scanUptime()) el.scanUptime().textContent = fmt(Number(s.scan_uptime_s||0));
+
+    // 扫描速率
+    if (el.scanRate()) el.scanRate().textContent = String(s.scan_rate_kpm || 0);
+
+    // 更新 Token 可用性
+    if (el.tokensOk()) el.tokensOk().textContent = String(s.tokens_ok || 0);
+    if (el.tokensTotal()) el.tokensTotal().textContent = String(s.tokens_total || 0);
+    if (el.tokensLimited()) el.tokensLimited().textContent = String(s.tokens_rate_limited || 0);
+  } catch (e) {}
+  // 更新 Token 圆环
+  updateTokenRing();
+}
+
+function updateTokenRing() {
+  const ctx = el.tokenRing();
+  if (!ctx) return;
+  const total = Number(state.stats?.tokens_total || 0);
+  const ok = Number(state.stats?.tokens_ok || 0);
+  const limited = Number(state.stats?.tokens_rate_limited || 0);
+  const bad = Math.max(0, total - ok - limited);
+  const data = {
+    labels: ['可用','限流','不可用'],
+    datasets: [{
+      data: [ok, limited, bad],
+      backgroundColor: ['#4bc0c0','#36a2eb','#1b2656'],
+      borderColor: ['#4bc0c0','#36a2eb','#1b2656'],
+      borderWidth: 1,
+    }]
+  };
+  if (state.charts.tokenRing) {
+    state.charts.tokenRing.data = data;
+    state.charts.tokenRing.update();
+  } else {
+    state.charts.tokenRing = new Chart(ctx, { type: 'doughnut', data, options: { responsive: true, cutout: '70%' } });
+  }
+}
+
+}
+
   }
 }
 
@@ -173,11 +248,14 @@ function renderKeys(keys) {
       item.dataset.limit = k.limit ?? '';
       item.dataset.free = k.is_free_tier ? '1' : '0';
 
+      const typeBadge = k.type ? `<span class="badge">${k.type}</span>` : '';
+
       item.innerHTML = `
         <div class="key-main">
           <div class="key-row">
             <span class="key-text" title="点击查看详情">${k.key_display}</span>
             <div class="key-actions">
+              ${typeBadge}
               <button class="btn btn-xs" data-action="copy" title="复制该Key">复制</button>
               <a class="btn btn-xs btn-outline" href="${k.source_url}" target="_blank" title="来源">来源</a>
             </div>
@@ -230,6 +308,10 @@ function filterKeys() {
       return remaining > 0;
     }
     if (f === 'free') return !!k.is_free_tier;
+    if (f && f.startsWith('type:')) {
+      const t = f.split(':')[1];
+      return (k.type || '').toLowerCase() === t;
+    }
     return true; // all
   };
 
@@ -240,8 +322,9 @@ function filterKeys() {
 function exportKeys() {
   if (!state.keys.length) return showNotification('没有可导出的Key', 'warning');
   const rows = [
-    ['key', 'usage', 'limit', 'is_free_tier', 'source_repo', 'source_url', 'found_at', 'last_checked'],
+    ['type', 'key', 'usage', 'limit', 'is_free_tier', 'source_repo', 'source_url', 'found_at', 'last_checked'],
     ...state.keys.map((k) => [
+      k.type ?? '',
       k.key,
       k.balance ?? '',
       k.limit ?? '',
@@ -311,46 +394,57 @@ function addLogItem(log) {
   if (!c) return;
   const item = document.createElement('div');
   item.className = `log-item ${log.level || 'info'}`;
-  const ts = log.time || log.timestamp || new Date().toISOString();
-  item.innerHTML = `<span class="ts">${new Date(ts).toLocaleString()}</span><span class="lv">[${log.level}]</span><span class="msg">${log.message}</span>`;
-  c.prepend(item);
-  // limit to 200 logs
-  while (c.childNodes.length > 200) c.removeChild(c.lastChild);
-}
-
-async function loadLogs() {
-  try {
-    const res = await fetch('/api/logs');
-    const logs = await res.json();
-    el.logsContainer().innerHTML = '';
-    logs.reverse().forEach(addLogItem); // oldest first
-  } catch (e) {
-    // ignore
-  }
-}
-
-// Charts
-function updateBalanceChart(keys) {
+// Provider grouped chart
+function updateProviderChart() {
   const ctx = el.balanceChart();
   if (!ctx) return;
-  const free = keys.filter((k) => k.is_free_tier).length;
-  const paid = keys.length - free;
-  const totalUsage = keys.reduce((s, k) => s + Number(k.balance || 0), 0);
+  const byType = state.stats?.by_type || {};
+  const labels = ['openrouter','openai','anthropic','gemini'];
+  const counts = labels.map(l => byType[l] || 0);
+  const orUsage = Number(state.stats?.openrouter_usage_total || 0);
 
   const data = {
-    labels: ['免费层', '付费'],
+    labels,
     datasets: [
       {
         label: '数量',
-        data: [free, paid],
-        backgroundColor: ['#36a2eb66', '#4bc0c066'],
-        borderColor: ['#36a2eb', '#4bc0c0'],
+        data: counts,
+        backgroundColor: ['#4bc0c066','#36a2eb66','#9966ff66','#ffcd5666'],
+        borderColor: ['#4bc0c0','#36a2eb','#9966ff','#ffcd56'],
         borderWidth: 1,
         yAxisID: 'y',
       },
       {
-        label: '总使用量($)',
-        data: [0, totalUsage],
+        label: 'OpenRouter使用量($)',
+        data: [orUsage, 0, 0, 0],
+// Trend chart
+function updateTrendChart() {
+  const ctx = el.trendCanvas();
+  if (!ctx) return;
+  const trend = state.stats?.scan_trend || {};
+  const labels = Object.keys(trend).sort();
+  const values = labels.map(k => trend[k]);
+  const data = {
+    labels,
+    datasets: [
+      {
+        label: '每分钟扫描Keys',
+        data: values,
+        fill: true,
+        borderColor: '#4bc0c0',
+        backgroundColor: 'rgba(75,192,192,0.2)',
+        tension: 0.3,
+      }
+    ]
+  };
+  if (state.charts.trendChart) {
+    state.charts.trendChart.data = data;
+    state.charts.trendChart.update();
+  } else {
+    state.charts.trendChart = new Chart(ctx, { type: 'line', data, options: { responsive: true } });
+  }
+}
+
         type: 'line',
         borderColor: '#ff6384',
         backgroundColor: '#ff638466',
@@ -375,6 +469,30 @@ function updateBalanceChart(keys) {
       },
     });
   }
+}
+
+  const ts = log.time || log.timestamp || new Date().toISOString();
+  item.innerHTML = `<span class="ts">${new Date(ts).toLocaleString()}</span><span class="lv">[${log.level}]</span><span class="msg">${log.message}</span>`;
+  c.prepend(item);
+  // limit to 200 logs
+  while (c.childNodes.length > 200) c.removeChild(c.lastChild);
+}
+
+async function loadLogs() {
+  try {
+    const res = await fetch('/api/logs');
+    const logs = await res.json();
+    el.logsContainer().innerHTML = '';
+    logs.reverse().forEach(addLogItem); // oldest first
+  } catch (e) {
+    // ignore
+  }
+}
+
+// Charts (provider grouped)
+function updateBalanceChart(keys) {
+  // 现在统一使用 updateProviderChart 来绘制按类型分组图
+  updateProviderChart();
 }
 
 // Socket.IO
@@ -405,8 +523,16 @@ async function init() {
 
   await loadConfig();
   await refreshKeys();
+  await refreshStats();
   await loadLogs();
   initSocket();
+
+  // 自动刷新（每 60 秒）
+  setInterval(() => {
+    refreshKeys();
+    refreshStats();
+    loadLogs();
+  }, 60000);
 
   // Bind filters
   el.keySearch().addEventListener('keyup', () => filterKeys());
