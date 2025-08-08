@@ -268,7 +268,7 @@ def validate_gemini_key(api_key: str) -> Dict:
             resp = requests.get(url, timeout=10)
             if resp.status_code == 429:
                 backoff_sleep(attempt)
-                continue
+                return {"valid": False, "rate_limited": True}
             if resp.status_code == 200:
                 return {"valid": True, "type": "gemini"}
             if resp.status_code in (400, 401, 403):
@@ -401,6 +401,18 @@ def get_file_content(item: Dict, token: str) -> Optional[str]:
 
         if response.status_code == 200:
             return response.text
+# 通用趋势记录（按分钟聚合）
+
+def record_metric_trend(bucket_key: str, delta: int):
+    try:
+        now_min = datetime.now().strftime('%Y-%m-%d %H:%M')
+        bucket = _config_get(bucket_key, {}) or {}
+        cur = int(bucket.get(now_min, 0))
+        bucket[now_min] = cur + max(0, int(delta))
+        _config_set(bucket_key, bucket)
+    except Exception:
+        pass
+
 
         # 尝试 master 分支
         raw_url = f"https://raw.githubusercontent.com/{repo}/master/{path}"
@@ -554,11 +566,18 @@ def scanner_worker():
                         info = validate_gemini_key(key)
                         if info.get('valid'):
                             log_message(f"✅ [Gemini] 有效: {key[:10]}...", "success")
+                            inc_counter('gemini_valid_total', 1)
+                            record_metric_trend('gemini_valid_trend', 1)
                             save_key(key, {**info, 'balance': 0, 'limit': 0, 'is_free_tier': False}, {
                                 'repo': item['repository']['full_name'], 'url': item['html_url']
                             })
                         else:
-                            log_message(f"❌ [Gemini] 无效: {key[:10]}...", "warning")
+                            if info.get('rate_limited'):
+                                log_message(f"⚠️ [Gemini] 429: {key[:10]}...", "warning")
+                                inc_counter('gemini_429_total', 1)
+                                record_metric_trend('gemini_429_trend', 1)
+                            else:
+                                log_message(f"❌ [Gemini] 无效: {key[:10]}...", "warning")
 
                     time.sleep(1)  # 避免太快
 
@@ -661,7 +680,7 @@ def get_logs():
     return jsonify(logs)
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """返回分组统计和累计扫描数量"""
+    """返回分组统计、累计扫描、Gemini状态统计与趋势"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT key_type, COUNT(*) FROM keys GROUP BY key_type")
@@ -677,15 +696,21 @@ def get_stats():
     rate_limited = sum(1 for s in status_vals if s == 'rate_limited')
 
     # 扫描趋势（仅最近24小时）
-    trend_all = _config_get('scan_trend', {}) or {}
     cutoff = datetime.now() - timedelta(hours=24)
-    trend = {}
-    for k, v in trend_all.items():
-        try:
-            if datetime.strptime(k, '%Y-%m-%d %H:%M') >= cutoff:
-                trend[k] = v
-        except Exception:
-            continue
+    def pick_last_24h(key):
+        data = _config_get(key, {}) or {}
+        out = {}
+        for k, v in data.items():
+            try:
+                if datetime.strptime(k, '%Y-%m-%d %H:%M') >= cutoff:
+                    out[k] = v
+            except Exception:
+                continue
+        return out
+
+    trend_total = pick_last_24h('scan_trend')
+    trend_gemini_valid = pick_last_24h('gemini_valid_trend')
+    trend_gemini_429 = pick_last_24h('gemini_429_trend')
 
     # 运行时间
     app_uptime_s = int((datetime.now() - app_start_time).total_seconds())
@@ -693,9 +718,9 @@ def get_stats():
 
     # 扫描速率（keys/min）：最近10分钟平均
     try:
-        sorted_keys = sorted(trend.keys())
+        sorted_keys = sorted(trend_total.keys())
         window = sorted_keys[-10:] if len(sorted_keys) >= 10 else sorted_keys
-        total_in_window = sum(trend[k] for k in window) if window else 0
+        total_in_window = sum(trend_total[k] for k in window) if window else 0
         scan_rate_kpm = round(total_in_window / max(1, len(window)), 2)
     except Exception:
         scan_rate_kpm = 0.0
@@ -708,7 +733,11 @@ def get_stats():
         'tokens_total': len(tokens),
         'tokens_ok': ok,
         'tokens_rate_limited': rate_limited,
-        'scan_trend': trend,
+        'trend_total': trend_total,
+        'trend_gemini_valid': trend_gemini_valid,
+        'trend_gemini_429': trend_gemini_429,
+        'gemini_valid_total': get_counter('gemini_valid_total', 0),
+        'gemini_429_total': get_counter('gemini_429_total', 0),
         'app_uptime_s': app_uptime_s,
         'scan_uptime_s': scan_uptime_s,
         'scan_rate_kpm': scan_rate_kpm,

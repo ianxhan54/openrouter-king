@@ -67,8 +67,43 @@ function renderGroupedKeys(grouped) {
   const root = $("#groupedKeys");
   if (!root) return;
 
-  let total = 0;
-  providers.forEach((p) => (total += (grouped[p] || []).length));
+  const showProviders = [currentProvider];
+  const items = (grouped[currentProvider] || []).slice();
+
+  // 计算并渲染分页、状态筛选
+  const filtered = items.filter(k => {
+    const st = String(k.status || '').toLowerCase();
+    if (statusFilter === 'valid') return st.includes('200') || st.includes('valid');
+    if (statusFilter === '429') return st.includes('429');
+    if (statusFilter === 'forbidden') return st.includes('403') || st.includes('forbidden');
+    if (statusFilter === 'other') return !(st.includes('200')||st.includes('valid')||st.includes('429')||st.includes('403')||st.includes('forbidden'));
+    return true;
+  });
+
+  const total = filtered.length;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (page > pages) page = pages;
+  const start = (page - 1) * pageSize;
+  const pageItems = filtered.slice(start, start + pageSize);
+
+  // 头部 OpenRouter 余额徽标
+  let titleExtra = '';
+  if (currentProvider === 'openrouter') {
+    const usage = Number((window.state?.stats?.openrouter_usage_total) || 0);
+    titleExtra = ` <span class="badge">$${usage.toFixed(2)}</span>`;
+  }
+
+  // 渲染分页条
+  const pager = document.getElementById('pager');
+  if (pager) {
+    pager.innerHTML = `
+      <div class="info">共 ${total} 条 • 第 ${page}/${pages} 页</div>
+      <div class="actions">
+        <button class="btn btn-outline" ${page<=1?'disabled':''} onclick="setPage(${page-1})">上一页</button>
+        <button class="btn btn-outline" ${page>=pages?'disabled':''} onclick="setPage(${page+1})">下一页</button>
+      </div>`;
+  }
+
   if (!total) {
     root.innerHTML = `
       <div class="empty-state">
@@ -79,70 +114,85 @@ function renderGroupedKeys(grouped) {
     return;
   }
 
-  const sections = providers
-    .map((p) => {
-      const items = grouped[p] || [];
-      const listHtml = items
-        .map((k) => {
-          const keyDisplay = k.key_display || k.key || "";
-          const source = k.source_url ? `<a class="btn btn-xs btn-outline" href="${k.source_url}" target="_blank">来源</a>` : "";
-          return `
-            <div class="key-item">
-              <div class="key-main">
-                <div class="key-row">
-                  <span class="key-text">${keyDisplay}</span>
-                  <div class="key-actions">${source}</div>
-                </div>
-              </div>
-            </div>`;
-        })
-        .join("");
-
+  const listHtml = pageItems
+    .map((k) => {
+      const keyDisplay = k.key_display || k.key || "";
+      const source = k.source_url ? `<a class="btn btn-xs btn-outline" href="${k.source_url}" target="_blank">来源</a>` : "";
+      const status = k.status ? `<span class=\"badge\">${k.status}</span>` : '';
       return `
-        <div class="provider-section">
-          <div class="provider-header">
-            <h3>${providerTitle(p)} <small>(${items.length})</small></h3>
+        <div class="key-item">
+          <div class="key-main">
+            <div class="key-row">
+              <span class="key-text">${keyDisplay}</span>
+              <div class="key-actions">${status} ${source}</div>
+            </div>
           </div>
-          <div class="provider-list">${listHtml || "<div class=\"empty-state\"><p>暂无</p></div>"}</div>
         </div>`;
     })
     .join("");
 
-  root.innerHTML = sections;
+  root.innerHTML = `
+    <div class="provider-section">
+      <div class="provider-header">
+        <h3>${providerTitle(currentProvider)}${titleExtra} <small>(${total})</small></h3>
+        <div class="button-group">
+          <button class="btn btn-outline btn-sm ${statusFilter==='all'?'active':''}" onclick="setStatusFilter('all')">All</button>
+          <button class="btn btn-outline btn-sm ${statusFilter==='valid'?'active':''}" onclick="setStatusFilter('valid')">200</button>
+          <button class="btn btn-outline btn-sm ${statusFilter==='429'?'active':''}" onclick="setStatusFilter('429')">429</button>
+          <button class="btn btn-outline btn-sm ${statusFilter==='forbidden'?'active':''}" onclick="setStatusFilter('forbidden')">Forbidden</button>
+          <button class="btn btn-outline btn-sm ${statusFilter==='other'?'active':''}" onclick="setStatusFilter('other')">Other</button>
+        </div>
+      </div>
+      <div class="provider-list">${listHtml}</div>
+    </div>`;
 
-  // Bind copy buttons
-  root.querySelectorAll("[data-copy]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-  // 保存最新数据供一键复制
-  window.__grouped = grouped;
-
-      copyToClipboard(btn.getAttribute("data-copy") || "");
-    });
-  });
-  // Click on key text also copies
-  root.querySelectorAll(".key-text").forEach((el) => {
-    el.addEventListener("click", () => {
-      const parent = el.closest(".key-item");
-      const btn = parent?.querySelector("[data-copy]");
-      if (btn) copyToClipboard(btn.getAttribute("data-copy") || "");
-    });
-  });
-  // Bind provider copy
-  root.querySelectorAll("[data-copy-provider]").forEach((btn) => {
-    btn.addEventListener("click", () => copyProvider(btn.getAttribute("data-copy-provider")));
-  });
+  // 保存当前页数据供“复制当前页”
+  window.__pageItems = pageItems;
 }
 
 async function refresh() {
   const grouped = await fetchGroupedKeys();
   renderGroupedKeys(grouped);
 }
+// 当前展示的 provider（默认全部）
+let currentProvider = 'gemini';
+
+function setProvider(p) {
+  currentProvider = p;
+// 分页与状态筛选
+let page = 1;
+const pageSize = 20;
+let statusFilter = 'all'; // all|valid|429|forbidden|other
+
+function setStatusFilter(s){ statusFilter = s; page = 1; refresh(); }
+function setPage(p){ page = Math.max(1, p); refresh(); }
+window.copyCurrentPage = copyCurrentPage;
+
+async function copyCurrentPage(){
+  const items = (window.__pageItems||[]).map(k=>k.key).filter(Boolean);
+  if(!items.length) return showNotification('当前页没有可复制的 Key','warning');
+  copyToClipboard(items.join('\n'));
+}
+
+  updateProviderButtons();
+  refresh();
+}
+window.setProvider = setProvider;
+
+function updateProviderButtons() {
+  try {
+    document.querySelectorAll('.provider-filters [data-provider]')
+      .forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-provider') === currentProvider));
+  } catch (e) {}
+}
+
 
 async function copyAll() {
+  // 改为复制“当前筛选平台”的 Keys
   const grouped = await fetchGroupedKeys();
-  const all = providers.flatMap((p) => (grouped[p] || []).map((k) => k.key)).filter(Boolean);
-  if (!all.length) return showNotification("没有可复制的Key", "warning");
+  const showProviders = currentProvider === 'all' ? providers : [currentProvider];
+  const all = showProviders.flatMap((p) => (grouped[p] || []).map((k) => k.key)).filter(Boolean);
+  if (!all.length) return showNotification("当前筛选平台暂无可复制的 Key", "warning");
   copyToClipboard(all.join("\n"));
 }
 
@@ -167,6 +217,9 @@ window.addEventListener("DOMContentLoaded", () => {
   refresh();
   initSocket();
   setInterval(refresh, 60000); // refresh every 60s
+  refreshStats();
+  setInterval(refreshStats, 60000);
+
 });
 
 // OpenRouter Scanner Frontend Logic
@@ -306,6 +359,8 @@ async function refreshStats() {
     const res = await fetch('/api/stats');
     const s = await res.json();
     state.stats = s;
+    // 更新顶部统计卡片
+    updateTiles();
     // 更新 Provider 分组图
     updateProviderChart();
     // 更新趋势图
@@ -331,6 +386,18 @@ async function refreshStats() {
   } catch (e) {}
   // 更新 Token 圆环
   updateTokenRing();
+}
+
+// 更新顶部统计卡片
+function updateTiles() {
+  const s = state.stats || {};
+  const total = (s.by_type?.openrouter||0)+(s.by_type?.openai||0)+(s.by_type?.anthropic||0)+(s.by_type?.gemini||0);
+  const valid = Number(s.gemini_valid_total || 0); // 目前仅统计 gemini 有效/429
+  const r429 = Number(s.gemini_429_total || 0);
+  const setText = (id, val)=>{ const el=document.getElementById(id); if(el) el.textContent=String(val); };
+  setText('tileTotalKeys', total);
+  setText('tileValid200', valid);
+  setText('tile429', r429);
 }
 
 function updateTokenRing() {
@@ -592,20 +659,17 @@ function updateProviderChart() {
 function updateTrendChart() {
   const ctx = el.trendCanvas();
   if (!ctx) return;
-  const trend = state.stats?.scan_trend || {};
-  const labels = Object.keys(trend).sort();
-  const values = labels.map(k => trend[k]);
+  const tAll = state.stats?.trend_total || {};
+  const tValid = state.stats?.trend_gemini_valid || {};
+  const t429 = state.stats?.trend_gemini_429 || {};
+  const labels = Object.keys(tAll).sort();
+  const pick = (obj) => labels.map(k => obj[k] || 0);
   const data = {
     labels,
     datasets: [
-      {
-        label: '每分钟扫描Keys',
-        data: values,
-        fill: true,
-        borderColor: '#4bc0c0',
-        backgroundColor: 'rgba(75,192,192,0.2)',
-        tension: 0.3,
-      }
+      { label: 'Total/min', data: pick(tAll), fill: true, borderColor: '#5b8cff', backgroundColor: 'rgba(91,140,255,.18)', tension: 0.3 },
+      { label: 'Valid (200)', data: pick(tValid), fill: true, borderColor: '#21c07a', backgroundColor: 'rgba(33,192,122,.18)', tension: 0.3 },
+      { label: '429', data: pick(t429), fill: true, borderColor: '#ffb74d', backgroundColor: 'rgba(255,183,77,.25)', tension: 0.3 },
     ]
   };
   if (state.charts.trendChart) {

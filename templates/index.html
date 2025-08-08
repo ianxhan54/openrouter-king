@@ -22,6 +22,22 @@
         <!-- 主内容区（极简布局） -->
         <div class="main-content">
             <div class="keys-panel" style="width:100%">
+                <!-- 顶部统计卡片 -->
+                <div class="stats-tiles">
+                    <div class="stat-tile tile-blue">
+                        <div class="tile-title">Total Keys</div>
+                        <div class="tile-value" id="tileTotalKeys">0</div>
+                    </div>
+                    <div class="stat-tile tile-green">
+                        <div class="tile-title">Valid (200)</div>
+                        <div class="tile-value" id="tileValid200">0</div>
+                    </div>
+                    <div class="stat-tile tile-yellow">
+                        <div class="tile-title">Rate Limited (429)</div>
+                        <div class="tile-value" id="tile429">0</div>
+                    </div>
+                </div>
+
                 <!-- 统计图表 -->
                 <div class="card" style="margin-bottom:16px;">
                     <div class="card-header">
@@ -40,12 +56,28 @@
                     </div>
                 </div>
 
+                <!-- Notice 信息 -->
+                <div class="notice">
+                    <div class="notice-icon">ℹ️</div>
+                    <div class="notice-text">Notice: 为保护共享资源，页面可能仅展示部分 Keys 列表。</div>
+                </div>
+
                 <!-- 四平台分组列表 -->
                 <div class="card">
-                    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
                         <h2 style="margin:0;display:flex;align-items:center;gap:8px;">🔑 发现的Keys</h2>
-                        <button class="btn btn-primary" style="font-size:16px;padding:10px 16px;" onclick="copyAll()">📋 一键复制全部</button>
+                        <div class="provider-filters" style="display:flex;gap:8px;align-items:center;">
+                            <button class="btn btn-outline" data-provider="openrouter" onclick="setProvider('openrouter')">OpenRouter</button>
+                            <button class="btn btn-outline" data-provider="openai" onclick="setProvider('openai')">OpenAI</button>
+                            <button class="btn btn-outline" data-provider="anthropic" onclick="setProvider('anthropic')">Claude</button>
+                            <button class="btn btn-outline active" data-provider="gemini" onclick="setProvider('gemini')">Gemini</button>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <button class="btn btn-primary" style="font-size:16px;padding:10px 16px;" onclick="copyAll()">📋 复制当前筛选</button>
+                            <button class="btn btn-outline" style="font-size:16px;padding:10px 16px;" onclick="copyCurrentPage()">🗂️ 复制当前页</button>
+                        </div>
                     </div>
+                    <div id="pager" class="pager" style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin:6px 2px 8px 2px;"></div>
                     <div class="keys-list" id="groupedKeys">
                         <div class="empty-state">
                             <span class="empty-icon">🔍</span>
