@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-OpenRouter API Key Scanner
-Version: 1.0.0
+OpenRouter King - API Key Scanner
+Version: 1.1.0
+Changelog:
+- 调整扫描分配比例: OpenRouter 40%, Gemini 40%, OpenAI 10%, Claude 10%
+- 实现数据库版本管理和自动迁移
+- 优化扫描策略，重点关注高价值目标
 """
 from flask import Flask, render_template, jsonify, request, session
 from flask_cors import CORS
 from datetime import datetime, timedelta
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'rebuild-minimal-secret'
@@ -47,9 +51,9 @@ def init_db():
 # 初始化数据库（确保在调用 _get_setting 之前）
 init_db()
 
-# ---- Default scan queries (broad but useful; noise reduced by -path and code blacklist) ----
+# ---- Default scan queries - 重新分配比例: OpenRouter 40%, Gemini 40%, OpenAI 10%, Claude 10% ----
 DEFAULT_QUERIES = [
-    # OpenRouter
+    # OpenRouter - 12个查询 (40%)
     '"sk-or-v1-" extension:env -path:docs -path:doc -path:example -path:examples -path:samples -path:sample -path:test -path:tests -path:spec',
     '"sk-or-" filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
     '"OPENROUTER_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
@@ -60,38 +64,32 @@ DEFAULT_QUERIES = [
     '"sk-or-" extension:json -path:docs -path:example -path:examples -path:test -path:tests -path:spec',
     '"sk-or-" extension:yaml -path:docs -path:example -path:examples -path:test -path:tests',
     '"sk-or-" extension:yml -path:docs -path:example -path:examples -path:test -path:tests',
+    'openrouter filename:config -path:docs -path:example -path:examples -path:test -path:tests',
+    '"sk-or-" extension:php -path:docs -path:example -path:examples -path:test -path:tests',
 
-    # OpenAI
-    '"OPENAI_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
-    'openai.api_key extension:py -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-" filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-" extension:js -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-" extension:ts -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-" extension:json -path:docs -path:example -path:examples -path:test -path:tests -path:spec',
-    '"sk-" extension:yaml -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-" extension:yml -path:docs -path:example -path:examples -path:test -path:tests',
-
-    # Anthropic
-    '"ANTHROPIC_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-ant-" extension:env -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-ant-" extension:py -path:docs -path:example -path:examples -path:test -path:tests',
-
-    # Gemini / Google
+    # Gemini / Google - 12个查询 (40%)
     '"GEMINI_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
     '"GOOGLE_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
     'AIza filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
     'AIza extension:js -path:docs -path:example -path:examples -path:test -path:tests',
+    'AIza extension:py -path:docs -path:example -path:examples -path:test -path:tests',
+    'AIza extension:ts -path:docs -path:example -path:examples -path:test -path:tests',
+    'AIza extension:json -path:docs -path:example -path:examples -path:test -path:tests',
+    'AIza extension:yaml -path:docs -path:example -path:examples -path:test -path:tests',
+    '"GOOGLE_AI_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
+    'google.api_key extension:py -path:docs -path:example -path:examples -path:test -path:tests',
+    'gemini filename:config -path:docs -path:example -path:examples -path:test -path:tests',
+    'generativeai extension:py -path:docs -path:example -path:examples -path:test -path:tests',
 
-    # Common env/config files
-    'filename:.env.production -path:docs -path:example -path:examples -path:test -path:tests',
-    'filename:.env.local -path:docs -path:example -path:examples -path:test -path:tests',
-    'filename:.env.development -path:docs -path:example -path:examples -path:test -path:tests',
-    'filename:.env.sample -path:docs -path:example -path:examples -path:test -path:tests',
+    # OpenAI - 3个查询 (10%)
+    '"OPENAI_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
+    'openai.api_key extension:py -path:docs -path:example -path:examples -path:test -path:tests',
+    '"sk-" filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
 
-    # Misc variations
-    'api_key OPENAI extension:py -path:docs -path:example -path:examples -path:test -path:tests',
-    'apiKey OPENAI extension:js -path:docs -path:example -path:examples -path:test -path:tests',
-    'Authorization "Bearer sk-" -path:docs -path:example -path:examples -path:test -path:tests',
+    # Anthropic/Claude - 3个查询 (10%)
+    '"ANTHROPIC_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
+    '"sk-ant-" extension:env -path:docs -path:example -path:examples -path:test -path:tests',
+    '"sk-ant-" extension:py -path:docs -path:example -path:examples -path:test -path:tests',
 ]
 
 def ensure_defaults():
