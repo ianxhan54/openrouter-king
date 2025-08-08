@@ -46,6 +46,19 @@ DEBUG = os.environ.get('DEBUG', 'false').lower() in ('1', 'true', 'yes')
 app_start_time = datetime.now()
 scanner_start_time: Optional[datetime] = None
 
+# Token 状态跟踪（内存）
+token_status: Dict[str, Dict[str, Any]] = {}
+
+def mark_token_status(token: str, status: str, code: Optional[int] = None):
+    try:
+        token_status[token] = {
+            'status': status,
+            'code': code,
+            'ts': datetime.now().isoformat(timespec='seconds')
+        }
+    except Exception:
+        pass
+
 # 全局变量
 scanner_thread = None
 scanner_running = False
@@ -141,19 +154,6 @@ def _config_set(key: str, value: Any):
 
 def inc_counter(name: str, delta: int = 1):
     try:
-# Token 状态跟踪（内存）
-token_status: Dict[str, Dict[str, Any]] = {}
-
-def mark_token_status(token: str, status: str, code: Optional[int] = None):
-    try:
-        token_status[token] = {
-            'status': status,
-            'code': code,
-            'ts': datetime.now().isoformat(timespec='seconds')
-        }
-    except Exception:
-        pass
-
         cur = _config_get(name, 0)
         if not isinstance(cur, int):
             cur = 0
