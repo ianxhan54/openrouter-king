@@ -25,26 +25,13 @@
 
   async function loadStats(){ 
     try {
-      const newStats = await fetchJSON('/api/stats');
-      
-      // 检查数据是否真的更新了
-      const oldTimestamp = cache.stats?.last_updated || 0;
-      const newTimestamp = newStats?.last_updated || Date.now();
-      
-      cache.stats = newStats;
-      
-      // 强制更新UI组件
+      cache.stats = await fetchJSON('/api/stats'); 
       renderTiles(); 
       renderTrend(); 
       renderBadges(); 
       $('#dot')?.classList.add('on');
-      
-      // 输出调试信息
-      console.log(`Stats updated: ${new Date(newTimestamp).toLocaleTimeString()}`);
-      
     } catch(e) {
       console.error('Failed to load stats:', e);
-      $('#dot')?.classList.remove('on');
     }
   }
   
@@ -126,24 +113,7 @@
 
   async function loadKeys(){ 
     try{ 
-      const newGrouped = await fetchJSON('/api/keys_grouped');
-      
-      // 检查数据是否真的有变化（避免无意义的DOM更新）
-      const oldCount = cache.grouped ? 
-        Object.values(cache.grouped).flat().length : 0;
-      const newCount = newGrouped ? 
-        Object.values(newGrouped).flat().length : 0;
-      
-      cache.grouped = newGrouped;
-      
-      // 强制更新表格
-      renderGrid();
-      
-      // 调试信息
-      if(oldCount !== newCount) {
-        console.log(`Keys updated: ${oldCount} -> ${newCount}`);
-      }
-      
+      cache.grouped = await fetchJSON('/api/keys_grouped'); 
     } catch { 
       try {
         const list=await fetchJSON('/api/keys'); 
@@ -153,13 +123,12 @@
           (g[t]||(g[t]=[])).push(k)
         }); 
         cache.grouped=g; 
-        renderGrid();
       } catch(e) {
         console.error('Failed to load keys:', e);
         cache.grouped = {openrouter:[],openai:[],anthropic:[],gemini:[]};
-        renderGrid();
       }
     } 
+    renderGrid(); 
   }
 
   function renderTiles(){ 
@@ -200,8 +169,8 @@
     const data={ 
       series:[
         {name:'Total/min', data: pick(s.trend_total)}, 
-        {name:'Valid (200) - All Models', data: pick(s.trend_valid)}, 
-        {name:'429 - Rate Limited', data: pick(s.trend_429)}
+        {name:'Valid (200) - Gemini Only', data: pick(s.trend_valid)}, 
+        {name:'429 - Gemini Only', data: pick(s.trend_429)}
       ], 
       xaxis:{ categories:labels } 
     };
@@ -210,19 +179,7 @@
     if(!el) return;
     
     if(window.__trend){ 
-      try {
-        // 强制更新图表数据
-        window.__trend.updateSeries(data.series);
-        window.__trend.updateOptions({
-          xaxis: data.xaxis
-        }, false, true); // 第三个参数为true表示强制重新渲染
-      } catch(e) {
-        console.error('Chart update failed:', e);
-        // 如果更新失败，销毁重建
-        window.__trend.destroy();
-        window.__trend = null;
-        renderTrend(); // 递归重建
-      }
+      window.__trend.updateOptions({series:data.series, xaxis:data.xaxis}); 
       return; 
     }
     
@@ -291,11 +248,6 @@
     const g=cache.grouped||{}; 
     const arr=(g[currentProvider]||[]).slice();
     
-    // 确保数据是最新的
-    if(arr.length === 0 && currentProvider) {
-      console.log(`No data for provider: ${currentProvider}, available:`, Object.keys(g));
-    }
-    
     const filtered=arr.filter(k=>{ 
       const st=(k.status||'').toString().toLowerCase(); 
       if(statusFilter==='valid') return st.includes('200')||st.includes('valid'); 
@@ -333,24 +285,7 @@
       </tr>`; 
     }).join('');
     
-    const tbody = $('#gridBody');
-    if(tbody) {
-      // 强制刷新DOM内容
-      tbody.innerHTML = '';  // 先清空
-      tbody.innerHTML = rows || `<tr><td colspan="5" style="color:#9fb3c8">暂无数据</td></tr>`;
-      
-      // 重新绑定点击事件（防止事件丢失）
-      tbody.querySelectorAll('.key.clickable').forEach((el, idx) => {
-        el.onclick = () => {
-          const key = window.__pageItems?.[idx];
-          if(key?.key) {
-            navigator.clipboard.writeText(key.key);
-            toast('密钥已复制');
-          }
-        };
-      });
-    }
-    
+    $('#gridBody').innerHTML=rows||`<tr><td colspan="5" style="color:#9fb3c8">暂无数据</td></tr>`;
     window.__pageItems=items;
   }
 
@@ -671,33 +606,9 @@
       autoRefreshInterval = setInterval(async ()=>{
         console.log('🔄 Auto refresh executing...');
         try {
-          // 并行加载以提高性能
-          await Promise.all([
-            loadStats(),
-            loadKeys(),
-            loadScannerStatus()
-          ]);
-          
-          // 强制UI组件重新渲染（解决卡顿问题）
-          setTimeout(() => {
-            // 强制图表渲染
-            if(window.__trend) {
-              try {
-                window.__trend.render();
-              } catch(e) {
-                console.warn('Chart render warning:', e);
-              }
-            }
-            
-            // 强制表格重新渲染
-            renderGrid();
-            
-            // 更新所有计数显示
-            renderTiles();
-            renderBadges();
-            
-          }, 200);
-          
+          await loadStats();
+          await loadKeys(); 
+          await loadScannerStatus();
           updateAutoRefreshStatus();
         } catch(e) {
           console.error('Auto refresh failed:', e);
