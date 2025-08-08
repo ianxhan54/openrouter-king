@@ -64,6 +64,42 @@
    - 打开浏览器访问：http://localhost:4567
    - 使用管理员密码登录配置Token
 
+## ⚡ 极简运行（推荐新手）
+
+如果你只想快速体验，可以使用这个最简单的方式：
+
+### Windows 用户
+```cmd
+# 1. 下载项目
+git clone https://github.com/xmdbd/openrouter-king.git
+cd openrouter-king
+
+# 2. 安装依赖
+pip install flask flask-cors requests
+
+# 3. 直接运行
+python app.py
+```
+
+### Linux/Mac 用户
+```bash
+# 方式1: 一键运行脚本
+curl -sSL https://raw.githubusercontent.com/xmdbd/openrouter-king/main/quick-start.sh | bash
+
+# 方式2: 手动执行
+git clone https://github.com/xmdbd/openrouter-king.git && cd openrouter-king
+pip3 install flask flask-cors requests
+python3 app.py
+```
+
+### 访问应用
+1. 浏览器打开：http://localhost:4567
+2. 点击标题10次进入管理面板
+3. 输入密码：`Kuns123456.`
+4. 添加你的GitHub Token开始扫描
+
+**就这么简单！** 🎉
+
 ## 🌐 云服务器部署
 
 ### 方式一：使用 systemd 服务（推荐用于生产环境）
@@ -312,6 +348,8 @@ openrouter-king/
 ├── README.md           # 项目文档
 ├── VERSION             # 版本号
 ├── CHANGELOG.md        # 更新日志
+├── quick-start.sh      # Linux/Mac快速启动脚本
+├── quick-start.bat     # Windows快速启动脚本
 ├── app.db              # SQLite数据库（自动生成）
 ├── static/             # 静态资源
 │   ├── css/
