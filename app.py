@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
+"""
+OpenRouter API Key Scanner
+Version: 1.0.0
+"""
 from flask import Flask, render_template, jsonify, request, session
 from flask_cors import CORS
 from datetime import datetime, timedelta
+
+__version__ = '1.0.0'
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'rebuild-minimal-secret'
@@ -907,5 +913,5 @@ def api_admin_login():
     return jsonify({'ok': False}), 401
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=4567, debug=True)
 
