@@ -108,11 +108,93 @@ python3 app.py
 
 **就这么简单！** 🎉
 
+### 🔄 后台运行（关闭终端也不会停止）
+
+如果你想让程序在后台运行，不受终端关闭影响：
+
+#### 方法1: 使用 nohup（最简单）
+```bash
+# 先按上面步骤安装和激活虚拟环境
+git clone https://github.com/xmdbd/openrouter-king.git && cd openrouter-king
+python3 -m venv venv
+source venv/bin/activate
+pip install flask flask-cors requests
+
+# 后台运行
+nohup python app.py > app.log 2>&1 &
+
+# 查看日志
+tail -f app.log
+
+# 停止程序
+pkill -f "python app.py"
+```
+
+#### 方法2: 使用 screen（推荐）
+```bash
+# 安装 screen
+sudo apt install screen    # Ubuntu/Debian
+sudo yum install screen     # CentOS/RHEL
+
+# 创建 screen 会话
+screen -S openrouter
+
+# 在 screen 中运行程序（按上面的完整步骤）
+git clone https://github.com/xmdbd/openrouter-king.git && cd openrouter-king
+python3 -m venv venv
+source venv/bin/activate
+pip install flask flask-cors requests
+python app.py
+
+# 分离会话（程序继续运行）: 按 Ctrl+A 然后按 D
+# 重新连接: screen -r openrouter
+# 列出会话: screen -ls
+```
+
+#### 方法3: 使用 tmux
+```bash
+# 安装 tmux
+sudo apt install tmux      # Ubuntu/Debian
+
+# 创建会话
+tmux new -s openrouter
+
+# 在 tmux 中运行程序
+git clone https://github.com/xmdbd/openrouter-king.git && cd openrouter-king
+python3 -m venv venv
+source venv/bin/activate
+pip install flask flask-cors requests
+python app.py
+
+# 分离会话: 按 Ctrl+B 然后按 D
+# 重新连接: tmux attach -t openrouter
+```
+
+#### 方法4: 一键后台启动脚本（最推荐）
+```bash
+# 🚀 一键启动后台服务
+curl -sSL https://raw.githubusercontent.com/xmdbd/openrouter-king/main/start-background.sh | bash
+
+# 🔍 检查服务状态  
+curl -sSL https://raw.githubusercontent.com/xmdbd/openrouter-king/main/check-status.sh | bash
+
+# 🛑 停止服务
+curl -sSL https://raw.githubusercontent.com/xmdbd/openrouter-king/main/stop.sh | bash
+```
+
+这个方法会：
+- 自动下载项目到 `~/openrouter-king`
+- 创建虚拟环境和安装依赖
+- 后台启动服务（关闭终端不影响）
+- 生成PID文件便于管理
+- 提供完整的日志记录
+
 ### 常见问题
 - **遇到 `externally-managed-environment` 错误？** 
   查看 [安装问题解决指南](install.md)
 - **权限不足？** 在命令前加 `sudo`
 - **找不到模块？** 确保已激活虚拟环境：`source venv/bin/activate`
+- **关闭终端程序就停了？** 使用上面的后台运行方法
 
 ## 🌐 云服务器部署
 
@@ -390,6 +472,9 @@ openrouter-king/
 ├── CHANGELOG.md        # 更新日志
 ├── quick-start.sh      # Linux/Mac快速启动脚本
 ├── quick-start.bat     # Windows快速启动脚本
+├── start-background.sh # 后台启动脚本
+├── check-status.sh     # 状态检查脚本
+├── stop.sh            # 停止服务脚本
 ├── install.md          # 安装问题解决指南
 ├── app.db              # SQLite数据库（自动生成）
 ├── static/             # 静态资源
