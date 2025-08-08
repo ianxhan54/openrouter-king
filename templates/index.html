@@ -6,6 +6,8 @@
     <title>Key Scanner - 极简版</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 </head>
 <body>
     <div class="container">
@@ -20,13 +22,29 @@
         <!-- 主内容区（极简布局） -->
         <div class="main-content">
             <div class="keys-panel" style="width:100%">
+                <!-- 统计图表 -->
+                <div class="card" style="margin-bottom:16px;">
+                    <div class="card-header">
+                        <h2 style="margin:0;">📊 统计概览</h2>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="balanceChart"></canvas>
+                    </div>
+                </div>
+                <div class="card" style="margin-bottom:16px;">
+                    <div class="card-header">
+                        <h2 style="margin:0;">📈 扫描趋势</h2>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                </div>
+
                 <!-- 四平台分组列表 -->
                 <div class="card">
-                    <div class="card-header">
-                        <h2>🔑 发现的Keys（按平台分组）</h2>
-                        <div class="actions">
-                            <button class="btn btn-sm btn-success" onclick="copyAll()">📋 一键复制全部</button>
-                        </div>
+                    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                        <h2 style="margin:0;display:flex;align-items:center;gap:8px;">🔑 发现的Keys</h2>
+                        <button class="btn btn-primary" style="font-size:16px;padding:10px 16px;" onclick="copyAll()">📋 一键复制全部</button>
                     </div>
                     <div class="keys-list" id="groupedKeys">
                         <div class="empty-state">

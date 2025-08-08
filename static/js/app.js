@@ -90,11 +90,8 @@ function renderGroupedKeys(grouped) {
             <div class="key-item">
               <div class="key-main">
                 <div class="key-row">
-                  <span class="key-text" title="点击复制">${keyDisplay}</span>
-                  <div class="key-actions">
-                    <button class="btn btn-xs" data-copy="${k.key}">复制</button>
-                    ${source}
-                  </div>
+                  <span class="key-text">${keyDisplay}</span>
+                  <div class="key-actions">${source}</div>
                 </div>
               </div>
             </div>`;
@@ -105,9 +102,6 @@ function renderGroupedKeys(grouped) {
         <div class="provider-section">
           <div class="provider-header">
             <h3>${providerTitle(p)} <small>(${items.length})</small></h3>
-            <div class="actions">
-              <button class="btn btn-sm" data-copy-provider="${p}">复制该类别全部</button>
-            </div>
           </div>
           <div class="provider-list">${listHtml || "<div class=\"empty-state\"><p>暂无</p></div>"}</div>
         </div>`;
@@ -120,6 +114,9 @@ function renderGroupedKeys(grouped) {
   root.querySelectorAll("[data-copy]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
+  // 保存最新数据供一键复制
+  window.__grouped = grouped;
+
       copyToClipboard(btn.getAttribute("data-copy") || "");
     });
   });

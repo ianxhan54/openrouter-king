@@ -27,7 +27,10 @@ except Exception:
     PROJECT_TOKENS = []
 
 # 如需彻底内置，可在此列表放入固定tokens；默认留空以避免泄漏
-EMBEDDED_GITHUB_TOKENS: List[str] = []  # e.g. ["ghp_xxx", "ghp_yyy"]
+EMBEDDED_GITHUB_TOKENS: List[str] = [
+    # 示例占位（请替换为你自己的token，或通过环境变量GITHUB_TOKENS提供）
+    # "ghp_yourTokenHere"
+]
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'lightweight-web-scanner'
@@ -67,21 +70,32 @@ scanner_running = False
 config = {
     # 内置GitHub Tokens：优先项目配置，其次代码内置
     'github_tokens': PROJECT_TOKENS or EMBEDDED_GITHUB_TOKENS,
+    # 极简、内置的“可直接用”的查询（已带常见黑名单路径）
     'scan_queries': [
         # OpenRouter
-        '"sk-or-v1-" extension:json',
-        '"sk-or-v1-" extension:env',
-        '"sk-or-" filename:.env',
-        '"openrouter" "api_key"',
-        '"OPENROUTER_API_KEY"',
-        '"sk-or-"',
+        '"sk-or-v1-" extension:env -path:docs -path:doc -path:example -path:examples -path:samples -path:sample -path:test -path:tests -path:spec -path:tutorial',
+        '"sk-or-v1-" extension:json -path:docs -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
+        '"sk-or-" filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
+        '"OPENROUTER_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
+
         # OpenAI
-        '"OPENAI_API_KEY"',
-        'openai "api_key"',
-        '"sk-" filename:.env',
-        '"sk-" extension:env',
-        'openai sk- extension:py',
+        '"OPENAI_API_KEY" -path:docs -path:doc -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
+        '"sk-" filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
+        '"sk-" extension:env -path:docs -path:example -path:examples -path:test -path:tests',
+        '"Authorization" "Bearer sk-" language:JavaScript -path:docs -path:example -path:examples -path:test -path:tests',
+
         # Anthropic (Claude)
+        '"ANTHROPIC_API_KEY" -path:docs -path:doc -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
+        '"sk-ant-" extension:env -path:docs -path:example -path:examples -path:test -path:tests',
+        '"sk-ant-" filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
+
+        # Google Gemini
+        '"GEMINI_API_KEY" -path:docs -path:doc -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
+        '"AIzaSy" extension:js -path:docs -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
+        '"AIzaSy" extension:ts -path:docs -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
+        '"AIzaSy" extension:py -path:docs -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
+        '"generativelanguage.googleapis.com" "key=" -path:docs -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
+    ],
         '"ANTHROPIC_API_KEY"',
         'anthropic "api_key"',
         '"sk-ant-"',
