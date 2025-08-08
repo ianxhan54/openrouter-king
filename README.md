@@ -34,7 +34,7 @@
 - Python 3.8+
 - GitHub Personal Access Token
 
-### 安装步骤
+### 本地安装
 
 1. **克隆项目**
    ```bash
@@ -61,6 +61,206 @@
 5. **访问Web界面**
    - 打开浏览器访问：http://localhost:4567
    - 使用管理员密码登录配置Token
+
+## 🌐 云服务器部署
+
+### 方式一：使用 systemd 服务（推荐用于生产环境）
+
+1. **连接到云服务器**
+   ```bash
+   ssh root@your-server-ip
+   ```
+
+2. **安装Python和Git**
+   ```bash
+   # Ubuntu/Debian
+   apt update && apt upgrade -y
+   apt install python3 python3-pip git -y
+   
+   # CentOS/RHEL
+   yum update -y
+   yum install python3 python3-pip git -y
+   ```
+
+3. **克隆项目到服务器**
+   ```bash
+   cd /opt
+   git clone https://github.com/your-repo/openrouter-scanner.git
+   cd openrouter-scanner
+   ```
+
+4. **安装Python依赖**
+   ```bash
+   pip3 install -r requirements.txt
+   ```
+
+5. **创建systemd服务文件**
+   ```bash
+   cat > /etc/systemd/system/openrouter-scanner.service << EOF
+   [Unit]
+   Description=OpenRouter API Key Scanner
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=root
+   WorkingDirectory=/opt/openrouter-scanner
+   ExecStart=/usr/bin/python3 /opt/openrouter-scanner/app.py
+   Restart=always
+   RestartSec=10
+
+   [Install]
+   WantedBy=multi-user.target
+   EOF
+   ```
+
+6. **启动并启用服务**
+   ```bash
+   systemctl daemon-reload
+   systemctl start openrouter-scanner
+   systemctl enable openrouter-scanner
+   systemctl status openrouter-scanner
+   ```
+
+7. **配置防火墙**
+   ```bash
+   # Ubuntu/Debian (ufw)
+   ufw allow 4567/tcp
+   ufw reload
+   
+   # CentOS/RHEL (firewalld)
+   firewall-cmd --permanent --add-port=4567/tcp
+   firewall-cmd --reload
+   ```
+
+8. **访问应用**
+   - 浏览器访问：http://your-server-ip:4567
+   - 使用管理员密码 `Kuns123456.` 登录
+
+### 方式二：使用 Docker 容器
+
+1. **安装Docker**
+   ```bash
+   curl -fsSL https://get.docker.com | sh
+   systemctl start docker
+   systemctl enable docker
+   ```
+
+2. **创建Dockerfile**
+   ```bash
+   cat > Dockerfile << EOF
+   FROM python:3.9-slim
+   WORKDIR /app
+   COPY requirements.txt .
+   RUN pip install --no-cache-dir -r requirements.txt
+   COPY . .
+   EXPOSE 4567
+   CMD ["python", "app.py"]
+   EOF
+   ```
+
+3. **构建并运行容器**
+   ```bash
+   docker build -t openrouter-scanner .
+   docker run -d \
+     --name scanner \
+     --restart always \
+     -p 4567:4567 \
+     -v $(pwd)/app.db:/app/app.db \
+     openrouter-scanner
+   ```
+
+### 方式三：使用 screen/tmux 后台运行
+
+1. **安装screen**
+   ```bash
+   apt install screen -y  # Ubuntu/Debian
+   yum install screen -y  # CentOS/RHEL
+   ```
+
+2. **创建新的screen会话**
+   ```bash
+   screen -S scanner
+   ```
+
+3. **在screen中运行应用**
+   ```bash
+   cd /opt/openrouter-scanner
+   python3 app.py
+   ```
+
+4. **分离screen会话**
+   - 按 `Ctrl+A` 然后按 `D` 分离会话
+   - 重新连接：`screen -r scanner`
+
+### 安全建议
+
+1. **使用Nginx反向代理（可选）**
+   ```nginx
+   server {
+       listen 80;
+       server_name your-domain.com;
+       
+       location / {
+           proxy_pass http://127.0.0.1:4567;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+       }
+   }
+   ```
+
+2. **配置SSL证书（推荐）**
+   ```bash
+   # 使用Let's Encrypt免费证书
+   apt install certbot python3-certbot-nginx -y
+   certbot --nginx -d your-domain.com
+   ```
+
+3. **修改默认密码**
+   - 编辑 `app.py` 文件
+   - 修改 `ADMIN_PASSWORD` 变量
+   - 重启服务
+
+4. **定期备份数据库**
+   ```bash
+   # 创建备份脚本
+   echo '#!/bin/bash
+   cp /opt/openrouter-scanner/app.db /backup/app.db.$(date +%Y%m%d)
+   find /backup -name "app.db.*" -mtime +7 -delete' > /opt/backup.sh
+   chmod +x /opt/backup.sh
+   
+   # 添加到crontab
+   echo "0 2 * * * /opt/backup.sh" | crontab -
+   ```
+
+### 故障排除
+
+1. **查看服务日志**
+   ```bash
+   # systemd服务
+   journalctl -u openrouter-scanner -f
+   
+   # Docker容器
+   docker logs -f scanner
+   ```
+
+2. **检查端口占用**
+   ```bash
+   netstat -tlnp | grep 4567
+   lsof -i:4567
+   ```
+
+3. **权限问题**
+   ```bash
+   chmod 755 /opt/openrouter-scanner
+   chmod 644 /opt/openrouter-scanner/app.db
+   ```
+
+4. **Python依赖问题**
+   ```bash
+   pip3 install --upgrade pip
+   pip3 install -r requirements.txt --force-reinstall
+   ```
 
 ## ⚙️ 配置说明
 
