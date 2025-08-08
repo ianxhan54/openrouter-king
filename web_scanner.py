@@ -373,21 +373,6 @@ def search_github_any(query: str) -> (List[Dict], Optional[str]):
             log_message(f"搜索失败: {str(e)}", "error")
     return [], None
 
-            if resp.status_code == 200:
-                data = resp.json()
-                mark_token_status(token, 'ok', 200)
-                return data.get("items", []), token
-            if resp.status_code in (403, 429):
-                mark_token_status(token, 'rate_limited', resp.status_code)
-                log_message(f"GitHub限流/拒绝: {resp.status_code}，更换token重试", "warning")
-                continue
-            else:
-                mark_token_status(token, 'error', resp.status_code)
-                log_message(f"GitHub API 错误: {resp.status_code}", "error")
-        except Exception as e:
-            mark_token_status(token, 'error', -1)
-            log_message(f"搜索失败: {str(e)}", "error")
-    return [], None
 
 # 扫描趋势：每分钟累计快照（持久化）
 
@@ -400,7 +385,6 @@ def record_scan_trend(delta: int):
         _config_set('scan_trend', trend)
     except Exception:
         pass
-    return [], None
 
 
 # 获取文件内容
