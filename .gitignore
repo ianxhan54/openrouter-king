@@ -1,105 +1,49 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-*.pyo
-*.pyd
-*.so
-build/
-dist/
-wheels/
-*.egg-info
-*.egg
+# OpenRouter Scanner - Git Ignore Rules
 
-# Virtual environments
-.venv/
-.env/
-venv/
-env/
-ENV/
-
-# Environment variables and configuration
-.env
-.env.local
-.env.*.local
-*.env
-
-# IDE and Editor files
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-.project
-.pydevproject
-
-# macOS system files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Windows system files
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# Logs and temporary files
-*.log
-*.tmp
-*.temp
-logs/
-log/
-tmp/
-temp/
-
-# Database files
+# Database files - contains sensitive discovered keys
+app.db
 *.db
 *.sqlite
 *.sqlite3
 
-# Coverage reports
-htmlcov/
-.coverage
-.coverage.*
-coverage.xml
-*.cover
-.pytest_cache/
+# Log files
+*.log
+app.log
+logs/
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Python cache
+__pycache__/
+*.py[cod]
+*.class
 
-# Docker
-.dockerignore
+# Environment files
+.env
+.env.local
+.env.production
 
-# Project-specific data directories
+# IDE files
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+nul
+
+# Test files
+test_*.py
+debug_*.py
+
+# Temp files
+temp/
+tmp/
+cookies*.txt
+
+# Data dirs
 data/
 keys/
-results/
 
-# ⚠️ 重要：敏感文件 - 绝对不要上传！
-keys_valid_*.txt
-keys_detail_info_*.json
-checkpoint.json
-checkpoint_backup.json
-scanned_shas.txt
-queries.txt
-!queries.example
-hajimi_king.db
-
-# 个人配置文件
-.env.*
-!.env.example
-!.env.optimized
-
-# Backup files
-*.bak
-*.backup
-*.orig
-
-
-# Windows reserved device name workaround
-# Avoid indexing a path named 'nul' which breaks Git on Windows
-nul
+# Virtual env
+venv/
+env/

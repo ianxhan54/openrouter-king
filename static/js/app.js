@@ -1,803 +1,704 @@
-// Minimal Frontend for Key Scanner
-// - Auto-refresh grouped keys
-// - Copy per-provider or copy all
+(function(){
+  const $=s=>document.querySelector(s);
+  const $$=s=>Array.from(document.querySelectorAll(s));
+  const toast = (t)=>{ const n=$('#toast'); if(!n) return; n.textContent=t; n.style.opacity='1'; setTimeout(()=>n.style.opacity='0',2000); };
 
-const providers = ["openrouter", "openai", "anthropic", "gemini"];
+  let currentProvider='gemini';
+  let statusFilter='all';
+  let page=1, pageSize=20;
+  let cache={ grouped:null, stats:null };
+  let sortKey='last', sortDir='desc';
+  let autoRefreshInterval = null;
+  let autoRefreshEnabled = true;
+  let refreshIntervalSeconds = 5; // 默认5秒刷新
 
-function $(sel) {
-  return document.querySelector(sel);
-}
-
-function showNotification(text, type = "info") {
-  const n = $("#notification");
-  if (!n) return;
-  n.textContent = text;
-  n.className = `notification ${type}`;
-  n.style.opacity = "1";
-  setTimeout(() => (n.style.opacity = "0"), 2000);
-}
-
-function copyToClipboard(text) {
-  if (!text) return;
-  navigator.clipboard
-    .writeText(text)
-    .then(() => showNotification("已复制到剪贴板 ✅", "success"))
-    .catch(() => showNotification("复制失败 ❌", "error"));
-}
-
-async function fetchGroupedKeys() {
-  try {
-    // Prefer grouped endpoint
-    let res = await fetch("/api/keys_grouped");
-    if (res.ok) return await res.json();
-  } catch (e) {}
-
-  // Fallback to flat list and group on client
-  try {
-    const res = await fetch("/api/keys");
-    const list = await res.json();
-    const grouped = { openrouter: [], openai: [], anthropic: [], gemini: [] };
-    (list || []).forEach((k) => {
-      const t = (k.type || "").toLowerCase();
-      if (!grouped[t]) grouped[t] = [];
-      grouped[t].push(k);
-    });
-    return grouped;
-  } catch (e) {
-    return { openrouter: [], openai: [], anthropic: [], gemini: [] };
-  }
-}
-
-function providerTitle(p) {
-  switch (p) {
-    case "openrouter":
-      return "OpenRouter";
-    case "openai":
-      return "OpenAI";
-    case "anthropic":
-      return "Anthropic";
-    case "gemini":
-      return "Gemini";
-    default:
-      return p;
-  }
-}
-
-function renderGroupedKeys(grouped) {
-  const root = $("#groupedKeys");
-  if (!root) return;
-
-  const showProviders = [currentProvider];
-  const items = (grouped[currentProvider] || []).slice();
-
-  // 计算并渲染分页、状态筛选
-  const filtered = items.filter(k => {
-    const st = String(k.status || '').toLowerCase();
-    if (statusFilter === 'valid') return st.includes('200') || st.includes('valid');
-    if (statusFilter === '429') return st.includes('429');
-    if (statusFilter === 'forbidden') return st.includes('403') || st.includes('forbidden');
-    if (statusFilter === 'other') return !(st.includes('200')||st.includes('valid')||st.includes('429')||st.includes('403')||st.includes('forbidden'));
-    return true;
-  });
-
-  const total = filtered.length;
-  const pages = Math.max(1, Math.ceil(total / pageSize));
-  if (page > pages) page = pages;
-  const start = (page - 1) * pageSize;
-  const pageItems = filtered.slice(start, start + pageSize);
-
-  // 头部 OpenRouter 余额徽标
-  let titleExtra = '';
-  if (currentProvider === 'openrouter') {
-    const usage = Number((window.state?.stats?.openrouter_usage_total) || 0);
-    titleExtra = ` <span class="badge">$${usage.toFixed(2)}</span>`;
-  }
-
-  // 渲染分页条
-  const pager = document.getElementById('pager');
-  if (pager) {
-    pager.innerHTML = `
-      <div class="info">共 ${total} 条 • 第 ${page}/${pages} 页</div>
-      <div class="actions">
-        <button class="btn btn-outline" ${page<=1?'disabled':''} onclick="setPage(${page-1})">上一页</button>
-        <button class="btn btn-outline" ${page>=pages?'disabled':''} onclick="setPage(${page+1})">下一页</button>
-      </div>`;
-  }
-
-  if (!total) {
-    root.innerHTML = `
-      <div class="empty-state">
-        <span class="empty-icon">🔍</span>
-        <p>暂无发现的Keys</p>
-        <small>服务已自动开始扫描，无需操作</small>
-      </div>`;
-    return;
-  }
-
-  const listHtml = pageItems
-    .map((k) => {
-      const keyDisplay = k.key_display || k.key || "";
-      const source = k.source_url ? `<a class="btn btn-xs btn-outline" href="${k.source_url}" target="_blank">来源</a>` : "";
-      const status = k.status ? `<span class=\"badge\">${k.status}</span>` : '';
-      return `
-        <div class="key-item">
-          <div class="key-main">
-            <div class="key-row">
-              <span class="key-text">${keyDisplay}</span>
-              <div class="key-actions">${status} ${source}</div>
-            </div>
-          </div>
-        </div>`;
-    })
-    .join("");
-
-  root.innerHTML = `
-    <div class="provider-section">
-      <div class="provider-header">
-        <h3>${providerTitle(currentProvider)}${titleExtra} <small>(${total})</small></h3>
-        <div class="button-group">
-          <button class="btn btn-outline btn-sm ${statusFilter==='all'?'active':''}" onclick="setStatusFilter('all')">All</button>
-          <button class="btn btn-outline btn-sm ${statusFilter==='valid'?'active':''}" onclick="setStatusFilter('valid')">200</button>
-          <button class="btn btn-outline btn-sm ${statusFilter==='429'?'active':''}" onclick="setStatusFilter('429')">429</button>
-          <button class="btn btn-outline btn-sm ${statusFilter==='forbidden'?'active':''}" onclick="setStatusFilter('forbidden')">Forbidden</button>
-          <button class="btn btn-outline btn-sm ${statusFilter==='other'?'active':''}" onclick="setStatusFilter('other')">Other</button>
-        </div>
-      </div>
-      <div class="provider-list">${listHtml}</div>
-    </div>`;
-
-  // 保存当前页数据供“复制当前页”
-  window.__pageItems = pageItems;
-}
-
-async function refresh() {
-  const grouped = await fetchGroupedKeys();
-  renderGroupedKeys(grouped);
-}
-// 当前展示的 provider（默认全部）
-let currentProvider = 'gemini';
-let page = 1;
-const pageSize = 20;
-let statusFilter = 'all';
-
-
-function setProvider(p) {
-  page = 1;
-  updateProviderButtons();
-  refresh();
-}
-
-function setStatusFilter(s){ statusFilter = s; page = 1; refresh(); }
-function setPage(pn){ page = Math.max(1, pn); refresh(); }
-
-window.setProvider = setProvider;
-window.setStatusFilter = setStatusFilter;
-window.setPage = setPage;
-
-
-function updateProviderButtons() {
-  try {
-    document.querySelectorAll('.provider-filters [data-provider]')
-      .forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-provider') === currentProvider));
-  } catch (e) {}
-}
-
-
-async function copyAll() {
-  // 改为复制“当前筛选平台”的 Keys
-  const grouped = await fetchGroupedKeys();
-  const showProviders = currentProvider === 'all' ? providers : [currentProvider];
-  const all = showProviders.flatMap((p) => (grouped[p] || []).map((k) => k.key)).filter(Boolean);
-  if (!all.length) return showNotification("当前筛选平台暂无可复制的 Key", "warning");
-  copyToClipboard(all.join("\n"));
-}
-
-async function adminLogin(){
-  const pwd = (document.getElementById('adminPwd')?.value || '').trim();
-  if(!pwd) return showNotification('请输入密码','warning');
-  try{
-    const res = await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})});
-    if(res.ok){
-      document.getElementById('adminModal').style.display='none';
-      showNotification('已登录（管理员）','success');
-    }else{
-      showNotification('密码错误','error');
+  async function fetchJSON(url){ 
+    try {
+      const r=await fetch(url); 
+      if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`);
+      return r.json(); 
+    } catch(e) {
+      console.error('Fetch error:', e);
+      throw e;
     }
-  }catch(e){ showNotification('登录失败','error'); }
-}
-window.adminLogin = adminLogin;
-
-}
-
-async function copyProvider(provider) {
-  const grouped = await fetchGroupedKeys();
-  const list = (grouped[provider] || []).map((k) => k.key).filter(Boolean);
-  if (!list.length) return showNotification("该类别暂无Key", "warning");
-  copyToClipboard(list.join("\n"));
-}
-
-function initSocket() {
-  try {
-    const socket = io();
-    socket.on("new_key", () => refresh());
-    socket.on("log", () => {});
-  } catch (e) {}
-}
-
-window.copyAll = copyAll;
-
-window.addEventListener("DOMContentLoaded", () => {
-  refresh();
-  initSocket();
-  setInterval(refresh, 60000); // refresh every 60s
-  refreshStats();
-  setInterval(refreshStats, 60000);
-
-});
-
-// OpenRouter Scanner Frontend Logic
-// Handles config, scanning controls, keys rendering, logs, charts, and copy/export
-
-let state = {
-  keys: [],
-  filteredKeys: [],
-  running: false,
-  stats: { by_type: {}, scanned_keys_total: 0, openrouter_usage_total: 0 },
-  charts: {
-    balanceChart: null,
-    trendChart: null,
-    tokenRing: null,
-
-  },
-};
-
-// DOM refs
-
-
-const el = {
-  statusDot: () => document.querySelector('#statusIndicator .status-dot'),
-  statusText: () => document.getElementById('statusText'),
-  totalKeys: () => document.getElementById('totalKeys'),
-  validKeys: () => document.getElementById('validKeys'),
-  totalBalance: () => document.getElementById('totalBalance'),
-  scannedTotal: () => document.getElementById('scannedTotal'),
-  tokensOk: () => document.getElementById('tokensOk'),
-  tokensTotal: () => document.getElementById('tokensTotal'),
-  tokensLimited: () => document.getElementById('tokensLimited'),
-  appUptime: () => document.getElementById('appUptime'),
-  scanUptime: () => document.getElementById('scanUptime'),
-  scanRate: () => document.getElementById('scanRate'),
-  startBtn: () => document.getElementById('startBtn'),
-  stopBtn: () => document.getElementById('stopBtn'),
-  githubTokens: () => document.getElementById('githubTokens'),
-  searchQueries: () => document.getElementById('searchQueries'),
-  scanInterval: () => document.getElementById('scanInterval'),
-  maxResults: () => document.getElementById('maxResults'),
-  logsContainer: () => document.getElementById('logsContainer'),
-  keysList: () => document.getElementById('keysList'),
-  keySearch: () => document.getElementById('keySearch'),
-  tokenRing: () => document.getElementById('tokenRing'),
-
-  keyFilter: () => document.getElementById('keyFilter'),
-  trendCanvas: () => document.getElementById('trendChart'),
-
-  notification: () => document.getElementById('notification'),
-  keyModal: () => document.getElementById('keyModal'),
-  keyDetails: () => document.getElementById('keyDetails'),
-  balanceChart: () => document.getElementById('balanceChart'),
-};
-
-// Helpers
-function showNotification(text, type = 'info') {
-  const n = el.notification();
-  if (!n) return;
-  n.textContent = text;
-  n.className = `notification ${type}`;
-  n.style.opacity = '1';
-  setTimeout(() => (n.style.opacity = '0'), 2200);
-}
-
-function formatCurrency(n) {
-  if (typeof n !== 'number') return '0.00';
-  return n.toFixed(2);
-}
-
-function copyToClipboard(text) {
-  if (!text) return;
-  navigator.clipboard
-    .writeText(text)
-    .then(() => showNotification('已复制到剪贴板 ✅', 'success'))
-    .catch(() => showNotification('复制失败 ❌', 'error'));
-}
-
-function updateStatusUI(running) {
-  state.running = running;
-  const dot = el.statusDot();
-  const txt = el.statusText();
-  const start = el.startBtn();
-  const stop = el.stopBtn();
-  if (running) {
-    dot?.classList.add('running');
-    txt.textContent = '运行中';
-    start.disabled = true;
-    stop.disabled = false;
-  } else {
-    dot?.classList.remove('running');
-    txt.textContent = '未运行';
-    start.disabled = false;
-    stop.disabled = true;
   }
-}
 
-// Load & save config
-async function loadConfig() {
-  const res = await fetch('/api/config');
-  const cfg = await res.json();
-  el.githubTokens().value = (cfg.github_tokens || []).join('\n');
-  el.searchQueries().value = (cfg.scan_queries || []).join('\n');
-  el.scanInterval().value = cfg.scan_interval ?? 60;
-  el.maxResults().value = cfg.max_results_per_query ?? 100;
-}
-
-async function saveConfig() {
-  try {
-    const payload = {
-      github_tokens: el.githubTokens().value
-        .split(/\n|,/) // allow newline or comma
-        .map((s) => s.trim())
-        .filter(Boolean),
-      scan_queries: el.searchQueries().value
-        .split(/\n/)
-        .map((s) => s.trim())
-        .filter(Boolean),
-      scan_interval: Number(el.scanInterval().value || 60),
-      max_results_per_query: Number(el.maxResults().value || 100),
-    };
-
-    const res = await fetch('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (data.status === 'success') {
-      showNotification('配置已保存 ✅', 'success');
+  async function loadStats(){ 
+    try {
+      cache.stats = await fetchJSON('/api/stats'); 
+      renderTiles(); 
+      renderTrend(); 
+      renderBadges(); 
+      $('#dot')?.classList.add('on');
+    } catch(e) {
+      console.error('Failed to load stats:', e);
+    }
+  }
+  
+  async function loadScannerStatus(){
+    try {
+      const status = await fetchJSON('/api/scanner/status');
+      updateScannerDisplay(status);
+    } catch(e) {
+      console.error('Failed to load scanner status:', e);
+    }
+  }
+  
+  function updateScannerDisplay(status){
+    // Update header status
+    const statusEl = $('#status');
+    const dotEl = $('#dot');
+    const infoEl = $('#scannerInfo');
+    
+    if(!status.github_tokens_configured){
+      statusEl.textContent = '未配置';
+      dotEl.classList.remove('on', 'scanning');
+      dotEl.style.background = '#ff5c7a';
+      infoEl.textContent = '请配置 GitHub Token';
+    } else if(status.is_running){
+      statusEl.textContent = '扫描中';
+      dotEl.classList.add('scanning');
+      dotEl.style.background = '#ffb74d';
+      if(status.current_query){
+        infoEl.textContent = `正在扫描: ${status.current_query.substring(0,30)}...`;
+      }
     } else {
-      showNotification('保存失败 ❌', 'error');
+      statusEl.textContent = '运行中';
+      dotEl.classList.remove('scanning');
+      dotEl.classList.add('on');
+      dotEl.style.background = '';
+      
+      if(status.last_scan_end){
+        const lastTime = new Date(status.last_scan_end);
+        const now = new Date();
+        const diffMs = now - lastTime;
+        const diffMins = Math.floor(diffMs / 60000);
+        
+        if(diffMins < 1){
+          infoEl.textContent = '刚刚扫描完成';
+        } else if(diffMins < 60){
+          infoEl.textContent = `${diffMins}分钟前扫描`;
+        } else {
+          const diffHours = Math.floor(diffMins / 60);
+          infoEl.textContent = `${diffHours}小时前扫描`;
+        }
+        
+        // Next scan time
+        const nextScan = new Date(lastTime.getTime() + status.scan_interval * 1000);
+        if(nextScan > now){
+          const nextDiffMs = nextScan - now;
+          const nextMins = Math.floor(nextDiffMs / 60000);
+          if(nextMins > 0){
+            infoEl.textContent += ` · 下次扫描: ${nextMins}分钟后`;
+          }
+        }
+      } else {
+        infoEl.textContent = '等待首次扫描';
+      }
     }
-  } catch (e) {
-    showNotification('保存出错 ❌', 'error');
-async function refreshStats() {
-  try {
-    const res = await fetch('/api/stats');
-    const s = await res.json();
-    state.stats = s;
-    // 更新顶部统计卡片
-    updateTiles();
-    // 更新 Provider 分组图
-    updateProviderChart();
-    // 更新趋势图
-    updateTrendChart();
-    // 更新头部累计扫描数量
-    if (el.scannedTotal()) el.scannedTotal().textContent = String(s.scanned_keys_total || 0);
-    // 运行时长显示
-    const fmt = (s)=>{
-      const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = s%60;
-      const pad = n => String(n).padStart(2,'0');
-      return `${h}:${pad(m)}:${pad(ss)}`;
+    
+    // Update config modal status if open
+    if($('#configModal').style.display === 'block'){
+      $('#cfgScanStatus').textContent = status.is_running ? '扫描中...' : '空闲';
+      $('#cfgLastScan').textContent = status.last_scan_end || '尚未扫描';
+      $('#cfgKeysFound').textContent = status.keys_found_session || 0;
+      
+      // Show errors if any
+      if(status.errors && status.errors.length > 0){
+        const lastError = status.errors[status.errors.length - 1];
+        $('#cfgScanStatus').textContent += ` (最近错误: ${lastError})`;
+      }
+    }
+  }
+
+  async function loadKeys(){ 
+    try{ 
+      cache.grouped = await fetchJSON('/api/keys_grouped'); 
+    } catch { 
+      try {
+        const list=await fetchJSON('/api/keys'); 
+        const g={openrouter:[],openai:[],anthropic:[],gemini:[]}; 
+        (list||[]).forEach(k=>{
+          const t=(k.type||'').toLowerCase(); 
+          (g[t]||(g[t]=[])).push(k)
+        }); 
+        cache.grouped=g; 
+      } catch(e) {
+        console.error('Failed to load keys:', e);
+        cache.grouped = {openrouter:[],openai:[],anthropic:[],gemini:[]};
+      }
+    } 
+    renderGrid(); 
+  }
+
+  function renderTiles(){ 
+    const s=cache.stats||{}; 
+    const total=(s.by_type?.openrouter||0)+(s.by_type?.openai||0)+(s.by_type?.anthropic||0)+(s.by_type?.gemini||0); 
+    $('#tTotal').textContent=total; 
+    
+    // 使用新的统计数据 - 所有类型的有效密钥
+    const validTotal = s.total_valid || 0;
+    const rateLimitTotal = s.total_429 || 0;
+    const forbiddenTotal = s.total_forbidden || 0;
+    
+    $('#tTotal').textContent = total;
+    $('#tValid').textContent = validTotal; 
+    $('#t429').textContent = rateLimitTotal; 
+    
+    // 如果有forbidden统计，也可以显示
+    const forbiddenTile = $('#tForbidden');
+    if(forbiddenTile) {
+      forbiddenTile.textContent = forbiddenTotal;
+    }
+  }
+
+  function renderBadges(){ 
+    const s=cache.stats||{}; 
+    const bt=s.by_type||{}; 
+    $('#b_or').textContent=bt.openrouter||0; 
+    $('#b_oa').textContent=bt.openai||0; 
+    $('#b_cl').textContent=bt.anthropic||0; 
+    $('#b_ge').textContent=bt.gemini||0; 
+  }
+
+  function renderTrend(){ 
+    const s=cache.stats||{}; 
+    const labels=Object.keys(s.trend_total||{}).sort().slice(-60); // Last 60 minutes
+    const pick=(o)=>labels.map(k=>o?.[k]||0);
+    
+    const data={ 
+      series:[
+        {name:'Total/min', data: pick(s.trend_total)}, 
+        {name:'Valid (200) - Gemini Only', data: pick(s.trend_valid)}, 
+        {name:'429 - Gemini Only', data: pick(s.trend_429)}
+      ], 
+      xaxis:{ categories:labels } 
     };
-    if (el.appUptime()) el.appUptime().textContent = fmt(Number(s.app_uptime_s||0));
-    if (el.scanUptime()) el.scanUptime().textContent = fmt(Number(s.scan_uptime_s||0));
+    
+    const el=document.querySelector('#trend'); 
+    if(!el) return;
+    
+    if(window.__trend){ 
+      window.__trend.updateOptions({series:data.series, xaxis:data.xaxis}); 
+      return; 
+    }
+    
+    window.__trend=new ApexCharts(el,{ 
+      chart:{type:'area', height:280, toolbar:{show:false}}, 
+      stroke:{curve:'smooth', width:2}, 
+      dataLabels:{enabled:false}, 
+      colors:['#4c7dff','#21c07a','#ffb74d'], 
+      series:data.series, 
+      xaxis:{
+        ...data.xaxis,
+        labels: { show: false }
+      },
+      yaxis: {
+        labels: {
+          style: { colors: '#9fb3c8' }
+        }
+      },
+      grid: {
+        borderColor: '#1e2630',
+        strokeDashArray: 3
+      },
+      fill:{
+        type:'gradient', 
+        gradient:{shadeIntensity:.5,opacityFrom:.3,opacityTo:.05}
+      } 
+    });
+    window.__trend.render();
+  }
 
-    // 扫描速率
-    if (el.scanRate()) el.scanRate().textContent = String(s.scan_rate_kpm || 0);
-
-    // 更新 Token 可用性
-    if (el.tokensOk()) el.tokensOk().textContent = String(s.tokens_ok || 0);
-    if (el.tokensTotal()) el.tokensTotal().textContent = String(s.tokens_total || 0);
-    if (el.tokensLimited()) el.tokensLimited().textContent = String(s.tokens_rate_limited || 0);
-  } catch (e) {}
-  // 更新 Token 圆环
-  updateTokenRing();
-}
-
-// 更新顶部统计卡片
-function updateTiles() {
-  const s = state.stats || {};
-  const total = (s.by_type?.openrouter||0)+(s.by_type?.openai||0)+(s.by_type?.anthropic||0)+(s.by_type?.gemini||0);
-  const valid = Number(s.gemini_valid_total || 0); // 目前仅统计 gemini 有效/429
-  const r429 = Number(s.gemini_429_total || 0);
-  const setText = (id, val)=>{ const el=document.getElementById(id); if(el) el.textContent=String(val); };
-  setText('tileTotalKeys', total);
-  setText('tileValid200', valid);
-  setText('tile429', r429);
-}
-
-function updateTokenRing() {
-  const ctx = el.tokenRing();
-  if (!ctx) return;
-  const total = Number(state.stats?.tokens_total || 0);
-  const ok = Number(state.stats?.tokens_ok || 0);
-  const limited = Number(state.stats?.tokens_rate_limited || 0);
-  const bad = Math.max(0, total - ok - limited);
-  const data = {
-    labels: ['可用','限流','不可用'],
-    datasets: [{
-      data: [ok, limited, bad],
-      backgroundColor: ['#4bc0c0','#36a2eb','#1b2656'],
-      borderColor: ['#4bc0c0','#36a2eb','#1b2656'],
-      borderWidth: 1,
-    }]
+  const fmtCurrency=(n)=>{ 
+    let x=Number(n); 
+    if(!isFinite(x)) x=0; 
+    return '$'+x.toFixed(2); 
   };
-  if (state.charts.tokenRing) {
-    state.charts.tokenRing.data = data;
-    state.charts.tokenRing.update();
-  } else {
-    state.charts.tokenRing = new Chart(ctx, { type: 'doughnut', data, options: { responsive: true, cutout: '70%' } });
+
+  function fmtStatus(k){ 
+    const st=(k.status||'').toString(); 
+    if(/200|valid/i.test(st)) return {t:'200', c:'green'}; 
+    if(/429/.test(st)) return {t:'429', c:'amber'}; 
+    if(/403|forbidden/i.test(st)) return {t:'Forbidden', c:'red'}; 
+    return {t: st||'-', c:''}; 
   }
-}
 
-}
-
+  function maskKey(k, showFull = false){ 
+    const v=k.key||''; 
+    if(showFull) return v;
+    return v.length>24? v.slice(0,12)+'...'+v.slice(-6): v; 
   }
-}
 
-// Scan control
-async function startScan() {
-  const res = await fetch('/api/start', { method: 'POST' });
-  const data = await res.json();
-  if (data.status === 'started' || data.status === 'already_running') {
-    updateStatusUI(true);
-    showNotification('扫描已启动 🚀', 'success');
-  } else {
-    showNotification('启动失败 ❌', 'error');
+  function nextTime(k){ 
+    const ts=new Date(k.last_checked||k.found_at||Date.now()); 
+    return new Date(ts.getTime()+60*60000).toLocaleString(); 
   }
-}
 
-async function stopScan() {
-  const res = await fetch('/api/stop', { method: 'POST' });
-  const data = await res.json();
-  if (data.status === 'stopped') {
-    updateStatusUI(false);
-    showNotification('扫描已停止 ⏹️', 'warning');
+  function getSortValue(k){
+    if(sortKey==='key') return (k.key||'');
+    if(sortKey==='status') return (k.status||'');
+    if(sortKey==='last') return new Date(k.last_checked||0).getTime();
+    if(sortKey==='next') return new Date(nextTime(k)).getTime();
+    if(sortKey==='balance') return k.balance||0;
+    return 0;
   }
-}
 
-// Keys
-function computeStats(keys) {
-  const total = keys.length;
-  const valid = total; // DB仅保存有效Key
-  let totalBalance = 0;
-  keys.forEach((k) => {
-    const b = Number(k.balance || 0);
-    if (!Number.isNaN(b)) totalBalance += b;
-  });
-  return { total, valid, totalBalance };
-}
+  function renderGrid(){ 
+    const g=cache.grouped||{}; 
+    const arr=(g[currentProvider]||[]).slice();
+    
+    const filtered=arr.filter(k=>{ 
+      const st=(k.status||'').toString().toLowerCase(); 
+      if(statusFilter==='valid') return st.includes('200')||st.includes('valid'); 
+      if(statusFilter==='429') return st.includes('429'); 
+      if(statusFilter==='forbidden') return st.includes('403')||st.includes('forbidden'); 
+      if(statusFilter==='other') return !(st.includes('200')||st.includes('valid')||st.includes('429')||st.includes('403')||st.includes('forbidden')); 
+      return true; 
+    });
+    
+    // Apply sorting
+    filtered.sort((a,b)=>{ 
+      const va=getSortValue(a), vb=getSortValue(b); 
+      if(va==vb) return 0; 
+      return (va>vb?1:-1)*(sortDir==='asc'?1:-1); 
+    });
+    
+    const total=filtered.length; 
+    const pages=Math.max(1, Math.ceil(total/pageSize)); 
+    if(page>pages) page=pages; 
+    const start=(page-1)*pageSize; 
+    const items=filtered.slice(start,start+pageSize);
+    
+    $('#pgInfo').textContent=`共 ${total} 条 • 第 ${page}/${pages} 页`;
+    
+    const rows=items.map((k, idx)=>{ 
+      const st=fmtStatus(k);
+      const isOR = ((k.type||'').toLowerCase()==='openrouter') || (currentProvider==='openrouter');
+      const bal = isOR? `<span class="balance">${fmtCurrency(k.balance||0)}</span>` : '';
+      return `<tr data-key-index="${idx}">
+        <td><span class="key clickable" title="点击复制完整密钥">${maskKey(k)}</span>${bal}</td>
+        <td><span class="status ${st.c}">${st.t}</span></td>
+        <td>${k.last_checked||'-'}</td>
+        <td>${nextTime(k)}</td>
+        <td>${isOR?fmtCurrency(k.balance||0):'-'}</td>
+      </tr>`; 
+    }).join('');
+    
+    $('#gridBody').innerHTML=rows||`<tr><td colspan="5" style="color:#9fb3c8">暂无数据</td></tr>`;
+    window.__pageItems=items;
+  }
 
-function renderKeys(keys) {
-  state.keys = keys;
-  state.filteredKeys = [...keys];
-
-  const list = el.keysList();
-  if (!keys.length) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <span class="empty-icon">🔍</span>
-        <p>暂无发现的Keys</p>
-        <small>开始扫描以发现OpenRouter API Keys</small>
-      </div>`;
-  } else {
-    list.innerHTML = '';
-    keys.forEach((k, idx) => {
-      const hasLimit = typeof k.limit === 'number' && k.limit > 0;
-      const remaining = hasLimit ? Math.max(0, k.limit - (k.balance || 0)) : null;
-      const item = document.createElement('div');
-      item.className = 'key-item';
-      item.dataset.key = k.key;
-      item.dataset.balance = k.balance ?? 0;
-      item.dataset.limit = k.limit ?? '';
-      item.dataset.free = k.is_free_tier ? '1' : '0';
-
-      const typeBadge = k.type ? `<span class="badge">${k.type}</span>` : '';
-
-      item.innerHTML = `
-        <div class="key-main">
-          <div class="key-row">
-            <span class="key-text" title="点击查看详情">${k.key_display}</span>
-            <div class="key-actions">
-              ${typeBadge}
-              <button class="btn btn-xs" data-action="copy" title="复制该Key">复制</button>
-              <a class="btn btn-xs btn-outline" href="${k.source_url}" target="_blank" title="来源">来源</a>
-            </div>
-          </div>
-          <div class="key-meta">
-            <span>使用量: $${formatCurrency(Number(k.balance || 0))}</span>
-            <span>限额: ${hasLimit ? '$' + formatCurrency(Number(k.limit)) : '无限制'}</span>
-            ${remaining !== null ? `<span>剩余: $${formatCurrency(remaining)}</span>` : ''}
-            <span>${k.is_free_tier ? '免费层' : '付费'}</span>
-            <span>${k.source_repo || ''}</span>
-          </div>
-        </div>
-      `;
-
-      item.querySelector('.key-text').addEventListener('click', () => openKeyModal(k));
-      item.querySelector('[data-action="copy"]').addEventListener('click', (e) => {
-        e.stopPropagation();
-        copyToClipboard(k.key);
+  function bind(){
+    // Providers
+    $$('.providers .btn').forEach(btn=>btn.addEventListener('click',()=>{ 
+      $$('.providers .btn').forEach(b=>b.classList.remove('active')); 
+      btn.classList.add('active'); 
+      currentProvider=btn.getAttribute('data-p'); 
+      page=1; 
+      renderGrid(); 
+    }));
+    
+    // Status filter
+    $('#statusSel')?.addEventListener('change', e=>{ 
+      statusFilter=e.target.value; 
+      page=1; 
+      renderGrid(); 
+    });
+    
+    $('#clearBtn')?.addEventListener('click', ()=>{ 
+      statusFilter='all'; 
+      $('#statusSel').value='all'; 
+      page=1; 
+      renderGrid(); 
+    });
+    
+    // Pager
+    $('#prevPg')?.addEventListener('click', ()=>{ 
+      if(page>1){ 
+        page--; 
+        renderGrid(); 
+      }
+    });
+    
+    $('#nextPg')?.addEventListener('click', ()=>{ 
+      const g=cache.grouped||{}; 
+      const arr=(g[currentProvider]||[]);
+      const total=arr.length;
+      const pages=Math.max(1, Math.ceil(total/pageSize));
+      if(page<pages){
+        page++; 
+        renderGrid();
+      }
+    });
+    
+    // Copy all keys on page
+    $('#copyPage')?.addEventListener('click', ()=>{ 
+      const items=(window.__pageItems||[]).map(k=>k.key).filter(Boolean); 
+      if(!items.length) return toast('当前页没有可复制的 Key'); 
+      navigator.clipboard.writeText(items.join('\n'))
+        .then(()=>toast('已复制当前页'))
+        .catch(()=>toast('复制失败')); 
+    });
+    
+    // Table header sorting
+    const head=$('#grid thead');
+    if(head){
+      head.addEventListener('click', (e)=>{
+        const th=e.target.closest('th[data-sort]'); 
+        if(!th) return;
+        const key=th.getAttribute('data-sort');
+        
+        if(sortKey===key){ 
+          sortDir= (sortDir==='asc'?'desc':'asc'); 
+        } else { 
+          sortKey=key; 
+          sortDir='desc'; 
+        }
+        
+        // Update header visual
+        $$('#grid thead th').forEach(t=>t.classList.remove('sorted-asc','sorted-desc'));
+        th.classList.add(sortDir==='asc'?'sorted-asc':'sorted-desc');
+        
+        renderGrid();
       });
+    }
+    
+    // Click on key to copy full key
+    $('#gridBody')?.addEventListener('click', (e)=>{
+      const keySpan = e.target.closest('.key.clickable');
+      if(keySpan){
+        const tr = keySpan.closest('tr');
+        const idx = parseInt(tr.getAttribute('data-key-index'));
+        const item = window.__pageItems[idx];
+        if(item && item.key){
+          navigator.clipboard.writeText(item.key)
+            .then(()=>{
+              toast('已复制完整密钥');
+              // Flash effect
+              keySpan.style.color = '#4c7dff';
+              setTimeout(()=>keySpan.style.color = '', 300);
+            })
+            .catch(()=>toast('复制失败'));
+        }
+      }
+    });
+    
+    // Hidden admin entry
+    let adminClicks=0, adminTm=null; 
+    $('#header .title h1')?.addEventListener('click',()=>{ 
+      adminClicks++; 
+      clearTimeout(adminTm); 
+      adminTm=setTimeout(()=>{adminClicks=0},1000); 
+      if(adminClicks>=10){ 
+        adminClicks=0; 
+        $('#adminModal').style.display='block'; 
+      } 
+    });
+    
+    // Admin login
+    $('#loginBtn')?.addEventListener('click', async ()=>{ 
+      const pwd=($('#adminPwd')?.value||'').trim(); 
+      if(!pwd) return toast('请输入密码'); 
+      
+      try {
+        const r=await fetch('/api/admin/login',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({password:pwd})
+        }); 
+        
+        if(r.ok){ 
+          toast('登录成功'); 
+          $('#adminModal').style.display='none';
+          $('#adminPwd').value='';
+          window.dispatchEvent(new CustomEvent('adminLogged')); 
+          openConfig();
+        } else {
+          toast('密码错误'); 
+        }
+      } catch(e) {
+        toast('登录失败');
+      }
+    });
+    
+    // Config panel
+    bindConfig();
+    
+    // Notice details
+    $('#nDetail')?.addEventListener('click', ()=>{
+      toast('为保护资源，部分功能受限');
+    });
+    
+    // Export and copy all buttons
+    $('#copyAllBtn')?.addEventListener('click', async ()=>{
+      await showKeysModal(currentProvider);
+    });
+    
+    $('#exportBtn')?.addEventListener('click', ()=>{
+      exportKeys(currentProvider);
+    });
+  }
+  
+  // Export keys to text file
+  function exportKeys(provider){
+    let url = `/api/keys/export/${provider}`;
+    let filename = `keys_${provider}`;
+    
+    // Add status filter if not 'all'
+    if(statusFilter && statusFilter !== 'all'){
+      // Map status filter to actual status codes
+      const statusMap = {
+        'valid': '200',
+        '429': '429', 
+        'forbidden': '403',
+        'other': 'other'
+      };
+      const actualStatus = statusMap[statusFilter] || statusFilter;
+      url += `/${actualStatus}`;
+      filename += `_${statusFilter}`;
+    }
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${filename}_${Date.now()}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    const filterText = statusFilter === 'all' ? '所有' : statusFilter;
+    toast(`开始下载 ${filterText} 状态的密钥...`);
+  }
+  
+  // Show keys modal with full keys
+  async function showKeysModal(provider){
+    try {
+      const response = await fetch(`/api/keys/copy/${provider}`);
+      const data = await response.json();
+      
+      let content = '';
+      for(const [type, keys] of Object.entries(data.keys)){
+        if(keys.length > 0){
+          content += `# ${type.toUpperCase()} KEYS\n`;
+          content += '='.repeat(50) + '\n';
+          for(const k of keys){
+            const statusStr = k.status ? ` [${k.status}]` : '';
+            content += `${k.key}${statusStr}\n`;
+          }
+          content += '\n';
+        }
+      }
+      
+      if(!content){
+        content = '暂无密钥';
+      }
+      
+      $('#keysContent').textContent = content;
+      $('#keysModal').style.display = 'block';
+      
+      // Setup modal buttons
+      $('#copyKeysBtn').onclick = ()=>{
+        const keysOnly = [];
+        for(const keys of Object.values(data.keys)){
+          keysOnly.push(...keys.map(k => k.key));
+        }
+        navigator.clipboard.writeText(keysOnly.join('\n'))
+          .then(()=>toast(`已复制 ${keysOnly.length} 个密钥`))
+          .catch(()=>toast('复制失败'));
+      };
+      
+      $('#downloadKeysBtn').onclick = ()=>{
+        exportKeys(provider);
+      };
+      
+    } catch(e){
+      toast('加载密钥失败');
+    }
+  }
+  
+  // Filter keys in modal
+  window.filterKeys = async function(filter){
+    await showKeysModal(filter);
+  }
 
-      list.appendChild(item);
+  async function openConfig(){
+    try{
+      const cfg = await fetch('/api/config').then(r=>r.json());
+      $('#cfgTokens').value = (cfg.github_tokens||[]).join('\n');
+      $('#cfgQueries').value = (cfg.scan_queries||[]).join('\n');
+      $('#cfgInterval').value = cfg.scan_interval||60;
+      $('#cfgMax').value = cfg.max_results_per_query||100;
+      $('#cfgRecent').checked = cfg.prefer_recent !== false;
+      $('#cfgDays').value = cfg.recent_days||30;
+      $('#configModal').style.display='block';
+      
+      // Load scanner status
+      loadScannerStatus();
+    }catch(e){ 
+      toast('读取配置失败'); 
+    }
+  }
+
+  async function saveConfig(){
+    const body = {
+      github_tokens: ($('#cfgTokens').value||'').split(/\n+/).map(s=>s.trim()).filter(Boolean),
+      scan_queries: ($('#cfgQueries').value||'').split(/\n+/).map(s=>s.trim()).filter(Boolean),
+      scan_interval: parseInt($('#cfgInterval').value||'60',10),
+      max_results_per_query: parseInt($('#cfgMax').value||'100',10),
+      prefer_recent: !!$('#cfgRecent').checked,
+      recent_days: parseInt($('#cfgDays').value||'30',10),
+    };
+    
+    try {
+      const r = await fetch('/api/config',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      });
+      
+      if(r.ok){ 
+        toast('已保存配置'); 
+        $('#configModal').style.display='none'; 
+      } else { 
+        toast('保存失败（需管理员登录）'); 
+      }
+    } catch(e) {
+      toast('保存失败');
+    }
+  }
+
+  function bindConfig(){
+    $('#cfgSave')?.addEventListener('click', saveConfig);
+    $('#cfgCancel')?.addEventListener('click', ()=> $('#configModal').style.display='none');
+    
+    // Trigger scan button
+    $('#triggerScan')?.addEventListener('click', async ()=>{
+      try {
+        const btn = $('#triggerScan');
+        btn.disabled = true;
+        btn.textContent = '触发中...';
+        
+        const r = await fetch('/api/scanner/trigger', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'}
+        });
+        
+        if(r.ok){
+          toast('扫描已触发，请稍候...');
+          setTimeout(loadScannerStatus, 2000);
+        } else {
+          toast('触发失败（需要管理员权限）');
+        }
+      } catch(e) {
+        toast('触发失败');
+      } finally {
+        const btn = $('#triggerScan');
+        btn.disabled = false;
+        btn.textContent = '立即扫描';
+      }
     });
   }
 
-  const stats = computeStats(keys);
-  el.totalKeys().textContent = String(stats.total);
-  el.validKeys().textContent = String(stats.valid);
-  el.totalBalance().textContent = formatCurrency(stats.totalBalance);
-  updateBalanceChart(keys);
-}
-
-async function refreshKeys() {
-  const res = await fetch('/api/keys');
-  const keys = await res.json();
-  renderKeys(keys);
-}
-
-function filterKeys() {
-  const q = (el.keySearch().value || '').trim().toLowerCase();
-  const f = el.keyFilter().value;
-
-  const match = (k) => {
-    if (q && !(k.key_display.toLowerCase().includes(q) || (k.source_repo || '').toLowerCase().includes(q))) {
-      return false;
+  function startAutoRefresh(){
+    if(autoRefreshInterval) clearInterval(autoRefreshInterval);
+    
+    if(autoRefreshEnabled){
+      autoRefreshInterval = setInterval(async ()=>{
+        console.log('🔄 Auto refresh executing...');
+        try {
+          await loadStats();
+          await loadKeys(); 
+          await loadScannerStatus();
+          updateAutoRefreshStatus();
+        } catch(e) {
+          console.error('Auto refresh failed:', e);
+        }
+      }, refreshIntervalSeconds * 1000);
+      
+      updateAutoRefreshStatus();
+      console.log(`✅ Auto refresh started (${refreshIntervalSeconds}s interval)`);
     }
-    if (f === 'valid') return true; // all stored keys are valid
-    if (f === 'balance') {
-      const hasLimit = typeof k.limit === 'number' && k.limit > 0;
-      const remaining = hasLimit ? k.limit - (k.balance || 0) : Infinity;
-      return remaining > 0;
-    }
-    if (f === 'free') return !!k.is_free_tier;
-    if (f && f.startsWith('type:')) {
-      const t = f.split(':')[1];
-      return (k.type || '').toLowerCase() === t;
-    }
-    return true; // all
-  };
-
-  const filtered = state.keys.filter(match);
-  renderKeys(filtered);
-}
-
-function exportKeys() {
-  if (!state.keys.length) return showNotification('没有可导出的Key', 'warning');
-  const rows = [
-    ['type', 'key', 'usage', 'limit', 'is_free_tier', 'source_repo', 'source_url', 'found_at', 'last_checked'],
-    ...state.keys.map((k) => [
-      k.type ?? '',
-      k.key,
-      k.balance ?? '',
-      k.limit ?? '',
-      k.is_free_tier ? 'true' : 'false',
-      k.source_repo ?? '',
-      k.source_url ?? '',
-      k.found_at ?? '',
-      k.last_checked ?? '',
-    ]),
-  ];
-  const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `openrouter_keys_${Date.now()}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function copyValidKeys() {
-  if (!state.keys.length) return showNotification('没有可复制的Key', 'warning');
-  // 复制当前筛选条件下的“有效”Key，这里数据库中均为有效
-  const f = el.keyFilter().value;
-  const keys = (f === 'all' || f === 'valid') ? state.keys : state.keys.filter((k) => {
-    if (f === 'balance') {
-      const hasLimit = typeof k.limit === 'number' && k.limit > 0;
-      const remaining = hasLimit ? k.limit - (k.balance || 0) : Infinity;
-      return remaining > 0;
-    }
-    if (f === 'free') return !!k.is_free_tier;
-    return true;
-  });
-  const text = keys.map((k) => k.key).join('\n');
-  copyToClipboard(text);
-}
-
-// Modal
-function openKeyModal(k) {
-  const m = el.keyModal();
-  const d = el.keyDetails();
-  if (!m || !d) return;
-  d.innerHTML = `
-    <div class="kv"><span class="k">Key</span><span class="v">${k.key}</span></div>
-    <div class="kv"><span class="k">显示</span><span class="v">${k.key_display}</span></div>
-    <div class="kv"><span class="k">使用量</span><span class="v">$${formatCurrency(Number(k.balance || 0))}</span></div>
-    <div class="kv"><span class="k">限额</span><span class="v">${typeof k.limit === 'number' && k.limit > 0 ? '$' + formatCurrency(Number(k.limit)) : '无限制'}</span></div>
-    <div class="kv"><span class="k">免费层</span><span class="v">${k.is_free_tier ? '是' : '否'}</span></div>
-    <div class="kv"><span class="k">来源</span><span class="v"><a href="${k.source_url}" target="_blank">${k.source_repo}</a></span></div>
-    <div class="actions">
-      <button class="btn btn-primary" id="copySingleKey">复制Key</button>
-    </div>
-  `;
-  m.style.display = 'block';
-  document.getElementById('copySingleKey')?.addEventListener('click', () => copyToClipboard(k.key));
-}
-
-function closeModal() {
-  const m = el.keyModal();
-  if (m) m.style.display = 'none';
-}
-window.closeModal = closeModal; // expose for HTML onclick
-
-// Logs
-function addLogItem(log) {
-  const c = el.logsContainer();
-  if (!c) return;
-  const item = document.createElement('div');
-  item.className = `log-item ${log.level || 'info'}`;
-// Provider grouped chart
-function updateProviderChart() {
-  const ctx = el.balanceChart();
-  if (!ctx) return;
-  const byType = state.stats?.by_type || {};
-  const labels = ['openrouter','openai','anthropic','gemini'];
-  const counts = labels.map(l => byType[l] || 0);
-  const orUsage = Number(state.stats?.openrouter_usage_total || 0);
-
-  const data = {
-    labels,
-    datasets: [
-      {
-        label: '数量',
-        data: counts,
-        backgroundColor: ['#4bc0c066','#36a2eb66','#9966ff66','#ffcd5666'],
-        borderColor: ['#4bc0c0','#36a2eb','#9966ff','#ffcd56'],
-        borderWidth: 1,
-        yAxisID: 'y',
-      },
-      {
-        label: 'OpenRouter使用量($)',
-        data: [orUsage, 0, 0, 0],
-// Trend chart
-function updateTrendChart() {
-  const ctx = el.trendCanvas();
-  if (!ctx) return;
-  const tAll = state.stats?.trend_total || {};
-  const tValid = state.stats?.trend_gemini_valid || {};
-  const t429 = state.stats?.trend_gemini_429 || {};
-  const labels = Object.keys(tAll).sort();
-  const pick = (obj) => labels.map(k => obj[k] || 0);
-  const data = {
-    labels,
-    datasets: [
-      { label: 'Total/min', data: pick(tAll), fill: true, borderColor: '#5b8cff', backgroundColor: 'rgba(91,140,255,.18)', tension: 0.3 },
-      { label: 'Valid (200)', data: pick(tValid), fill: true, borderColor: '#21c07a', backgroundColor: 'rgba(33,192,122,.18)', tension: 0.3 },
-      { label: '429', data: pick(t429), fill: true, borderColor: '#ffb74d', backgroundColor: 'rgba(255,183,77,.25)', tension: 0.3 },
-    ]
-  };
-  if (state.charts.trendChart) {
-    state.charts.trendChart.data = data;
-    state.charts.trendChart.update();
-  } else {
-    state.charts.trendChart = new Chart(ctx, { type: 'line', data, options: { responsive: true } });
   }
-}
-
-        type: 'line',
-        borderColor: '#ff6384',
-        backgroundColor: '#ff638466',
-        yAxisID: 'y1',
-      },
-    ],
-  };
-
-  if (state.charts.balanceChart) {
-    state.charts.balanceChart.data = data;
-    state.charts.balanceChart.update();
-  } else {
-    state.charts.balanceChart = new Chart(ctx, {
-      type: 'bar',
-      data,
-      options: {
-        responsive: true,
-        scales: {
-          y: { beginAtZero: true, position: 'left' },
-          y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } },
-        },
-      },
-    });
+  
+  function toggleAutoRefresh(){
+    autoRefreshEnabled = !autoRefreshEnabled;
+    if(autoRefreshEnabled){
+      startAutoRefresh();
+      toast(`自动刷新已开启 (${refreshIntervalSeconds}秒)`);
+    } else {
+      if(autoRefreshInterval) clearInterval(autoRefreshInterval);
+      autoRefreshInterval = null;
+      toast('自动刷新已关闭');
+    }
+    updateAutoRefreshStatus();
   }
-}
-
-  const ts = log.time || log.timestamp || new Date().toISOString();
-  item.innerHTML = `<span class="ts">${new Date(ts).toLocaleString()}</span><span class="lv">[${log.level}]</span><span class="msg">${log.message}</span>`;
-  c.prepend(item);
-  // limit to 200 logs
-  while (c.childNodes.length > 200) c.removeChild(c.lastChild);
-}
-
-async function loadLogs() {
-  try {
-    const res = await fetch('/api/logs');
-    const logs = await res.json();
-    el.logsContainer().innerHTML = '';
-    logs.reverse().forEach(addLogItem); // oldest first
-  } catch (e) {
-    // ignore
+  
+  function updateAutoRefreshStatus(){
+    const btn = document.getElementById('autoRefreshBtn');
+    if(btn){
+      btn.textContent = autoRefreshEnabled ? `🔄 自动刷新 (${refreshIntervalSeconds}s)` : '🔄 自动刷新 (关闭)';
+      btn.style.backgroundColor = autoRefreshEnabled ? '#10b981' : '#6b7280';
+    }
   }
-}
-
-// Charts (provider grouped)
-function updateBalanceChart(keys) {
-  // 现在统一使用 updateProviderChart 来绘制按类型分组图
-  updateProviderChart();
-}
-
-// Socket.IO
-function initSocket() {
-  const socket = io();
-  socket.on('connect', () => {
-    // connected
-  });
-  socket.on('log', (payload) => {
-    addLogItem(payload);
-  });
-  socket.on('new_key', (payload) => {
-    // Re-fetch keys to keep data consistent
-    refreshKeys();
-    showNotification(`发现有效Key: ${payload.key} ✅`, 'success');
-  });
-}
-
-// Init
-async function init() {
-  try {
-    const statusRes = await fetch('/api/status');
-    const status = await statusRes.json();
-    updateStatusUI(!!status.running);
-  } catch (e) {
-    // ignore
+  
+  function bindAutoRefresh(){
+    // 延迟一点执行，确保DOM完全加载
+    setTimeout(() => {
+      // 先尝试添加到header-buttons
+      let container = document.querySelector('.header-buttons');
+      
+      // 如果找不到header-buttons，创建一个固定位置的容器
+      if(!container) {
+        container = document.createElement('div');
+        container.style.cssText = 'position:fixed;top:10px;right:10px;z-index:1000;display:flex;gap:8px;';
+        document.body.appendChild(container);
+      }
+      
+      if(container && !document.getElementById('autoRefreshBtn')){
+        // 创建自动刷新按钮
+        const autoBtn = document.createElement('button');
+        autoBtn.id = 'autoRefreshBtn';
+        autoBtn.style.cssText = 'background:#10b981;color:white;padding:8px 12px;border-radius:6px;border:none;cursor:pointer;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,0.2);';
+        autoBtn.onclick = toggleAutoRefresh;
+        container.appendChild(autoBtn);
+        
+        // 创建间隔选择器
+        const select = document.createElement('select');
+        select.id = 'refreshIntervalSelect';
+        select.style.cssText = 'padding:6px;border-radius:4px;border:1px solid #374151;background:#1f2937;color:white;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,0.2);';
+        select.innerHTML = `
+          <option value="3">3秒</option>
+          <option value="5" selected>5秒</option>
+          <option value="10">10秒</option>
+          <option value="30">30秒</option>
+          <option value="60">60秒</option>
+        `;
+        select.onchange = (e)=>{
+          refreshIntervalSeconds = parseInt(e.target.value);
+          if(autoRefreshEnabled){
+            startAutoRefresh();
+            toast('刷新间隔已更改为 ' + refreshIntervalSeconds + '秒');
+          }
+          updateAutoRefreshStatus();
+        };
+        container.appendChild(select);
+        
+        // 立即更新按钮状态
+        updateAutoRefreshStatus();
+      }
+    }, 500); // 增加延迟时间
   }
 
-  await loadConfig();
-  await refreshKeys();
-  await refreshStats();
-  await loadLogs();
-  initSocket();
-
-  // 自动刷新（每 60 秒）
-  setInterval(() => {
-    refreshKeys();
-    refreshStats();
-    loadLogs();
-  }, 60000);
-
-  // Bind filters
-  el.keySearch().addEventListener('keyup', () => filterKeys());
-  el.keyFilter().addEventListener('change', () => filterKeys());
-
-  // Close modal on backdrop click
-  el.keyModal().addEventListener('click', (e) => {
-    if (e.target === el.keyModal()) closeModal();
-  });
-}
-
-window.saveConfig = saveConfig;
-window.startScan = startScan;
-window.stopScan = stopScan;
-window.refreshKeys = refreshKeys;
-window.exportKeys = exportKeys;
-window.copyValidKeys = copyValidKeys;
-
-window.addEventListener('DOMContentLoaded', init);
-
+  async function init(){ 
+    bind(); 
+    bindAutoRefresh();
+    await loadStats(); 
+    await loadKeys(); 
+    await loadScannerStatus();
+    
+    // Start auto refresh
+    startAutoRefresh();
+  }
+  
+  document.addEventListener('DOMContentLoaded', init);
+})();

@@ -1,137 +1,173 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Key Scanner - 极简版</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Key Scanner · Rebuilt</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 </head>
 <body>
-    <div class="container">
-        <!-- 头部（极简） -->
-        <header class="hero">
-            <h1 class="neon">🔍 Key Scanner</h1>
-            <div class="stats" style="margin-top:6px;">
-                <span id="statusText" class="neon">服务已部署，自动扫描中…</span>
-            </div>
-        </header>
-            <!-- 隐蔽入口：点击标题10次触发登录框 -->
-            <script>
-              let __clicks=0, __timer=null;
-              document.addEventListener('DOMContentLoaded',()=>{
-                const h=document.querySelector('header h1');
-                if(!h) return;
-                h.addEventListener('click',()=>{
-                  __clicks++;
-                  clearTimeout(__timer);
-                  __timer=setTimeout(()=>{__clicks=0;},1000);
-                  if(__clicks>=10){ __clicks=0; document.getElementById('adminModal').style.display='block'; }
-                });
-              });
-            </script>
+  <div class="container">
+    <header class="header" id="header">
+      <div class="title">
+        <h1>Key Scanner</h1>
+        <p class="sub">轻量扫描 · 实时概览</p>
+      </div>
+      <div class="status">
+        <span class="dot" id="dot"></span>
+        <span id="status">检查中...</span>
+        <div class="scanner-info" id="scannerInfo" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+        <div class="header-buttons" style="margin-top:8px"></div>
+      </div>
+    </header>
 
+    <section class="tiles">
+      <div class="tile blue"><div class="k">Total Keys</div><div class="v" id="tTotal">0</div></div>
+      <div class="tile green"><div class="k">Valid (200)</div><div class="v" id="tValid">0</div></div>
+      <div class="tile amber"><div class="k">Rate Limited (429)</div><div class="v" id="t429">0</div></div>
+    </section>
 
-        <!-- 主内容区（极简布局） -->
-        <div class="main-content">
-            <div class="keys-panel" style="width:100%">
-                <!-- 顶部统计卡片 -->
-                <div class="stats-tiles">
-                    <div class="stat-tile tile-blue">
-                        <div class="tile-title">Total Keys</div>
-                        <div class="tile-value" id="tileTotalKeys">0</div>
-                    </div>
-                    <div class="stat-tile tile-green">
-                        <div class="tile-title">Valid (200)</div>
-                        <div class="tile-value" id="tileValid200">0</div>
-                    </div>
-                    <div class="stat-tile tile-yellow">
-                        <div class="tile-title">Rate Limited (429)</div>
-                        <div class="tile-value" id="tile429">0</div>
-                    </div>
-                </div>
+    <section class="card">
+      <div class="card-head">
+        <h2>Key Status History (Last 24h)</h2>
+      </div>
+      <div id="trend" class="chart"></div>
+    </section>
 
-                <!-- 统计图表 -->
-                <div class="card" style="margin-bottom:16px;">
-                    <div class="card-header">
-                        <h2 style="margin:0;">📊 统计概览</h2>
-                    </div>
-                    <div class="card-body">
-                        <canvas id="balanceChart"></canvas>
-                    </div>
-                </div>
-                <div class="card" style="margin-bottom:16px;">
-                    <div class="card-header">
-                        <h2 style="margin:0;">📈 扫描趋势</h2>
-                    </div>
-                    <div class="card-body">
-                        <canvas id="trendChart"></canvas>
-                    </div>
-                </div>
+    <section class="notice">
+      <div class="i">ℹ️</div>
+      <div class="txt">Notice: 为保护共享资源，页面可能仅展示部分 Keys 列表。</div>
+      <button class="link" id="nDetail">Details</button>
+    </section>
 
-                <!-- Notice 信息 -->
-                <div class="notice">
-                    <div class="notice-icon">ℹ️</div>
-                    <div class="notice-text">Notice: 为保护共享资源，页面可能仅展示部分 Keys 列表。</div>
-                </div>
+    <section class="toolbar">
+      <div class="providers">
+        <button class="btn ghost" data-p="openrouter">OpenRouter<span class="badge" id="b_or"></span></button>
+        <button class="btn ghost" data-p="openai">OpenAI<span class="badge" id="b_oa"></span></button>
+        <button class="btn ghost" data-p="anthropic">Claude<span class="badge" id="b_cl"></span></button>
+        <button class="btn ghost active" data-p="gemini">Gemini<span class="badge" id="b_ge"></span></button>
+      </div>
+      <div class="actions">
+        <select id="statusSel" class="sel">
+          <option value="all">All Statuses</option>
+          <option value="valid">200</option>
+          <option value="429">429</option>
+          <option value="forbidden">Forbidden</option>
+          <option value="other">Other</option>
+        </select>
+        <button class="btn" id="clearBtn">Clear</button>
+        <button class="btn primary" id="copyPage">Copy Page</button>
+        <button class="btn primary" id="copyAllBtn">Copy All</button>
+        <button class="btn primary" id="exportBtn">Export TXT</button>
+      </div>
+    </section>
 
-                <!-- 四平台分组列表 -->
-                <div class="card">
-                    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-                        <h2 style="margin:0;display:flex;align-items:center;gap:8px;">🔑 发现的Keys</h2>
-                        <div class="provider-filters" style="display:flex;gap:8px;align-items:center;">
-                            <button class="btn btn-outline" data-provider="openrouter" onclick="setProvider('openrouter')">OpenRouter</button>
-                            <button class="btn btn-outline" data-provider="openai" onclick="setProvider('openai')">OpenAI</button>
-                            <button class="btn btn-outline" data-provider="anthropic" onclick="setProvider('anthropic')">Claude</button>
-                            <button class="btn btn-outline active" data-provider="gemini" onclick="setProvider('gemini')">Gemini</button>
-                        </div>
-                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <!-- Admin 登录模态框 -->
-        <div id="adminModal" class="modal">
-          <div class="modal-content">
-            <span class="close" onclick="document.getElementById('adminModal').style.display='none'">&times;</span>
-            <h2>管理员登录</h2>
-            <div class="form-group">
-              <label>密码</label>
-              <input type="password" id="adminPwd" placeholder="输入管理员密码">
-            </div>
-            <div class="actions">
-              <button class="btn btn-primary" onclick="adminLogin()">登录</button>
-            </div>
+    <section class="card">
+      <table class="grid" id="grid">
+        <thead>
+          <tr>
+            <th data-sort="key">Key</th>
+            <th data-sort="status">Status</th>
+            <th data-sort="last">Last Check Time</th>
+            <th data-sort="next">Next Validation Time</th>
+            <th data-sort="balance">Balance</th>
+          </tr>
+        </thead>
+        <tbody id="gridBody"></tbody>
+      </table>
+      <div class="pager" id="pager">
+        <span class="info" id="pgInfo"></span>
+        <div class="nav">
+          <button class="btn ghost" id="prevPg">Prev</button>
+          <button class="btn ghost" id="nextPg">Next</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 隐蔽入口：标题连点10次打开配置登陆 -->
+  <div class="modal" id="adminModal">
+    <div class="modal-content">
+      <span class="close" onclick="document.getElementById('adminModal').style.display='none'">&times;</span>
+      <h2>管理员登录</h2>
+      <div class="form-group">
+        <label>密码</label>
+        <input type="password" id="adminPwd" placeholder="输入管理员密码" />
+      </div>
+      <div class="actions"><button class="btn primary" id="loginBtn">登录</button></div>
+    </div>
+  </div>
+
+  <!-- 配置面板（管理员登录后显示） -->
+  <div class="modal" id="configModal">
+    <div class="modal-content">
+      <span class="close" onclick="document.getElementById('configModal').style.display='none'">&times;</span>
+      <h2>配置</h2>
+      <div class="form-group">
+        <label>GitHub Tokens（每行一个）</label>
+        <textarea id="cfgTokens" rows="6" style="width:100%;background:#0c1430;color:#e8eef6;border:1px solid var(--border);border-radius:8px;padding:8px"></textarea>
+      </div>
+      <div class="form-group">
+        <label>查询（每行一个）</label>
+        <textarea id="cfgQueries" rows="6" style="width:100%;background:#0c1430;color:#e8eef6;border:1px solid var(--border);border-radius:8px;padding:8px"></textarea>
+      </div>
+      <div class="form-group" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <label>Scan Interval(s)</label>
+        <input type="number" id="cfgInterval" min="10" value="60" style="width:120px;background:#0c1430;color:#e8eef6;border:1px solid var(--border);border-radius:8px;padding:8px" />
+        <label>Max Results/Query</label>
+        <input type="number" id="cfgMax" min="10" value="100" style="width:140px;background:#0c1430;color:#e8eef6;border:1px solid var(--border);border-radius:8px;padding:8px" />
+        <label><input type="checkbox" id="cfgRecent" checked /> Prefer Recent</label>
+        <label>Recent Days</label>
+        <input type="number" id="cfgDays" min="1" value="30" style="width:120px;background:#0c1430;color:#e8eef6;border:1px solid var(--border);border-radius:8px;padding:8px" />
+      </div>
+      <div class="scanner-status-box" style="margin:16px 0;padding:12px;background:rgba(76,125,255,.05);border:1px solid var(--border);border-radius:8px">
+        <h4 style="margin:0 0 8px 0;font-size:14px">扫描器状态</h4>
+        <div id="scannerStatusBox" style="font-size:12px;color:var(--muted)">
+          <div>状态: <span id="cfgScanStatus">-</span></div>
+          <div>上次扫描: <span id="cfgLastScan">-</span></div>
+          <div>本次找到: <span id="cfgKeysFound">-</span> 个密钥</div>
+          <div style="margin-top:8px">
+            <button class="btn primary" id="triggerScan" style="font-size:12px;padding:6px 12px">立即扫描</button>
           </div>
         </div>
-
-                            <button class="btn btn-primary" style="font-size:16px;padding:10px 16px;" onclick="copyAll()">📋 复制当前筛选</button>
-                            <button class="btn btn-outline" style="font-size:16px;padding:10px 16px;" onclick="copyCurrentPage()">🗂️ 复制当前页</button>
-                        </div>
-                    </div>
-                    <div id="pager" class="pager" style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin:6px 2px 8px 2px;"></div>
-                    <div class="keys-list" id="groupedKeys">
-                        <div class="empty-state">
-                            <span class="empty-icon">🔍</span>
-                            <p>暂无发现的Keys</p>
-                            <small>服务已自动开始扫描，无需操作</small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+      </div>
+      <div class="actions" style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn" id="cfgCancel">取消</button>
+        <button class="btn primary" id="cfgSave">保存</button>
+      </div>
     </div>
+  </div>
 
-    <!-- Key详情模态框 -->
-    <div id="keyModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal()">&times;</span>
-            <h2>Key 详情</h2>
-            <div id="keyDetails"></div>
-        </div>
+  <!-- Full Keys Modal -->
+  <div class="modal" id="keysModal">
+    <div class="modal-content" style="max-width:600px">
+      <span class="close" onclick="document.getElementById('keysModal').style.display='none'">&times;</span>
+      <h2>完整密钥列表</h2>
+      <div style="margin:10px 0">
+        <button class="btn ghost" onclick="filterKeys('all')">全部</button>
+        <button class="btn ghost" onclick="filterKeys('valid')">仅有效(200)</button>
+        <button class="btn ghost" onclick="filterKeys('openrouter')">OpenRouter</button>
+        <button class="btn ghost" onclick="filterKeys('openai')">OpenAI</button>
+        <button class="btn ghost" onclick="filterKeys('anthropic')">Anthropic</button>
+        <button class="btn ghost" onclick="filterKeys('gemini')">Gemini</button>
+      </div>
+      <div style="max-height:400px;overflow-y:auto;background:#0c1430;border:1px solid var(--border);border-radius:8px;padding:12px;margin:10px 0">
+        <pre id="keysContent" style="margin:0;font-family:monospace;font-size:12px;color:var(--text);white-space:pre-wrap;word-break:break-all"></pre>
+      </div>
+      <div class="actions" style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn" onclick="document.getElementById('keysModal').style.display='none'">关闭</button>
+        <button class="btn primary" id="copyKeysBtn">复制全部</button>
+        <button class="btn primary" id="downloadKeysBtn">下载TXT</button>
+      </div>
     </div>
+  </div>
 
-    <!-- 通知提示 -->
-    <div id="notification" class="notification"></div>
-
-    <script src="/static/js/app.js"></script>
+  <div class="toast" id="toast"></div>
+  <script src="/static/js/app.js"></script>
 </body>
 </html>
+

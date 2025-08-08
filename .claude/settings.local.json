@@ -2,7 +2,17 @@
   "permissions": {
     "allow": [
       "Bash(findstr:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(del:*)",
+      "Bash(rm:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(sqlite3:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:openrouter.ai)",
+      "Bash(timeout:*)",
+      "Bash(start:*)",
+      "Bash(dir:*)"
     ],
     "deny": []
   }

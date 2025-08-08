@@ -1,6 +1,41 @@
-# 核心依赖 - OpenRouter扫描必需
-python-dotenv>=1.1.1
-requests>=2.32.4
+# OpenRouter API Key Scanner Dependencies
 
-# 可选依赖 - 仅在需要Gemini支持时安装
-# google-generativeai>=0.8.5
+# Web Framework
+Flask==2.3.3
+Flask-CORS==4.0.0
+
+# HTTP Requests
+requests==2.31.0
+
+# Database
+# Note: SQLite is included with Python standard library
+
+# Date/Time utilities  
+# Note: datetime is included with Python standard library
+
+# JSON handling
+# Note: json is included with Python standard library
+
+# Threading support
+# Note: threading is included with Python standard library
+
+# Regular expressions
+# Note: re is included with Python standard library
+
+# Random number generation
+# Note: random is included with Python standard library
+
+# Logging
+# Note: logging is included with Python standard library
+
+# Operating system interface
+# Note: os is included with Python standard library
+
+# Time utilities
+# Note: time is included with Python standard library
+
+# System-specific parameters
+# Note: sys is included with Python standard library
+
+# URL parsing
+# Note: urllib is included with Python standard library

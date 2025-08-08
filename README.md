@@ -1,248 +1,191 @@
-# 🎪 Hajimi King 🏆
+# OpenRouter API Key Scanner
 
-人人都是哈基米大王 👑，注意项目核心的核心是query.txt的表达式 ✨
+一个强大的GitHub API密钥扫描工具，专门用于发现和验证各种AI服务的API密钥，包括OpenRouter、OpenAI、Anthropic Claude、Google Gemini等。
 
-## 📋 目录 🗂️
+## 🌟 特性
 
-- [本地部署](#-本地部署) 🏠
-- [Docker部署](#-docker部署) 🐳
-- [配置变量说明](#-配置变量说明) ⚙️
+### 核心功能
+- **多平台支持**：扫描OpenRouter、OpenAI、Anthropic、Gemini等主流AI服务密钥
+- **智能验证**：自动验证密钥有效性，区分有效、无效、被限流等状态
+- **实时监控**：24/7持续扫描，Web界面实时显示扫描状态和结果
+- **平衡策略**：17分钟完成一轮扫描，每天约86轮循环
+- **数据持久化**：SQLite数据库存储，支持数据导出
+
+### 扫描引擎
+- **基于Example架构**：采用久经验证的扫描算法
+- **智能去重**：SHA缓存避免重复扫描相同文件
+- **上下文过滤**：自动过滤占位符和示例密钥
+- **速率限制友好**：智能延迟控制，避免触发GitHub API限制
+- **Token轮换**：支持多个GitHub Token轮换使用
+
+### Web界面
+- **实时仪表盘**：显示扫描统计、密钥数量、有效率等
+- **自动刷新**：可配置的自动刷新间隔（3-60秒）
+- **分类查看**：按平台和状态分类显示密钥
+- **数据导出**：支持按状态导出密钥到TXT文件
+- **移动友好**：响应式设计，支持各种设备
+
+## 🚀 快速开始
+
+### 环境要求
+- Python 3.8+
+- GitHub Personal Access Token
+
+### 安装步骤
+
+1. **克隆项目**
+   ```bash
+   git clone https://github.com/your-repo/openrouter-scanner.git
+   cd openrouter-scanner
+   ```
+
+2. **安装依赖**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **配置GitHub Token**
+   - 访问 [GitHub Settings > Tokens](https://github.com/settings/tokens)
+   - 创建Personal Access Token (经典版本)
+   - 勾选 `public_repo` 权限
+   - 复制生成的token
+
+4. **启动应用**
+   ```bash
+   python app.py
+   ```
+
+5. **访问Web界面**
+   - 打开浏览器访问：http://localhost:8080
+   - 使用管理员密码登录配置Token
+
+## ⚙️ 配置说明
+
+### 管理员配置
+- 默认管理员密码：`Lcg040510.`
+- 登录后可配置GitHub Token和扫描参数
+
+### 扫描参数
+- **扫描间隔**：40秒（可调整）
+- **每查询结果数**：100个
+- **时间范围**：365天内的仓库
+- **查询总数**：25个精选查询
+
+### 查询分布
+- **Gemini查询**：5个（优先级最高）
+- **OpenAI查询**：6个（全面覆盖）
+- **Anthropic查询**：4个（精选重点）
+- **OpenRouter查询**：3个（专项搜索）
+- **通用查询**：7个（兜底搜索）
+
+## 📊 性能指标
+
+### 扫描能力
+- **完整周期**：16.7分钟
+- **日循环次数**：86轮
+- **日扫描容量**：216,000个文件
+- **发现效率**：高质量密钥发现
+
+### 验证精度
+- **OpenRouter验证**：使用实际聊天API验证
+- **OpenAI验证**：模型列表API验证
+- **Gemini验证**：生成API验证
+- **Anthropic验证**：模型API验证
+
+## 🛡️ 安全特性
+
+### 密钥验证
+- **真实验证**：使用各平台实际API进行验证
+- **状态跟踪**：记录有效、无效、限流等详细状态
+- **余额查询**：支持OpenRouter余额查询
+
+### 数据安全
+- **本地存储**：所有数据存储在本地SQLite数据库
+- **加密传输**：使用HTTPS与各API平台通信
+- **访问控制**：管理员密码保护敏感操作
+
+## 📁 项目结构
+
+```
+openrouter-scanner/
+├── app.py              # 主应用程序
+├── app.db              # SQLite数据库
+├── static/             # 静态资源
+│   ├── css/app.css     # 样式文件
+│   └── js/app.js       # JavaScript逻辑
+├── templates/          # HTML模板
+│   └── index.html      # 主页面
+└── example/            # 参考实现
+    ├── app/hajimi_king.py
+    └── utils/
+```
+
+## 🔧 API端点
+
+### 配置管理
+- `GET /api/config` - 获取配置
+- `POST /api/config` - 更新配置（需管理员权限）
+
+### 密钥管理
+- `GET /api/keys` - 获取所有密钥
+- `GET /api/keys_grouped` - 按类型分组获取密钥
+- `GET /api/keys/export/<provider>` - 导出指定平台密钥
+- `GET /api/keys/export/<provider>/<status>` - 按状态导出密钥
+
+### 统计监控
+- `GET /api/stats` - 获取扫描统计
+- `GET /api/scanner/status` - 获取扫描器状态
+- `POST /api/scanner/trigger` - 手动触发扫描
+
+## 📈 使用统计
+
+### 典型发现率
+- **OpenRouter密钥**：100%发现但验证后多数无效
+- **Gemini密钥**：较高的有效率
+- **OpenAI密钥**：中等发现率和有效率
+- **Anthropic密钥**：相对较少但质量较高
+
+### 扫描覆盖
+- **文件类型**：.env, .json, .js, .py等配置文件
+- **仓库类型**：公开仓库，1年内活跃
+- **过滤策略**：自动排除文档、示例、测试目录
+
+## 🤝 贡献指南
+
+欢迎提交Issue和Pull Request来改进项目！
+
+### 开发环境
+1. Fork项目
+2. 创建功能分支
+3. 提交更改
+4. 创建Pull Request
+
+### 代码规范
+- 遵循PEP 8 Python编码规范
+- JavaScript使用ES6+语法
+- 添加适当的注释和文档
+
+## 📄 许可证
+
+本项目采用MIT许可证，详见LICENSE文件。
+
+## ⚠️ 免责声明
+
+本工具仅供安全研究和教育目的使用。使用者应：
+- 遵守相关法律法规
+- 尊重API服务商的使用条款
+- 负责任地使用发现的密钥信息
+- 不得用于恶意目的
+
+使用本工具产生的任何后果由使用者承担。
+
+## 📞 支持
+
+如有问题或建议，请：
+- 提交GitHub Issue
+- 发送邮件至开发者
+- 查看项目Wiki获取更多信息
 
 ---
 
-## 🖥️ 本地部署 🚀
-
-### 1. 环境准备 🔧
-
-```bash
-# 确保已安装Python
-python --version
-
-# 安装uv包管理器（如果未安装）
-pip install uv
-```
-
-### 2. 项目设置 📁
-
-```bash
-# 克隆项目
-git clone <repository-url>
-cd hajimi-king
-
-# 复制配置文件
-cp env.example .env
-
-# 复制查询文件
-cp queries.example queries.txt
-```
-
-### 3. 配置环境变量 🔑
-
-编辑 `.env` 文件，**必须**配置GitHub Token：
-
-```bash
-# 必填：GitHub访问令牌
-GITHUB_TOKENS=ghp1,ghp2,ghp3
-
-# 可选：其他配置保持默认值即可
-```
-
-> 💡 **获取GitHub Token**：访问 [GitHub Settings > Tokens](https://github.com/settings/tokens)，创建具有 `public_repo` 权限的访问令牌 🎫
-
-### 4. 安装依赖并运行 ⚡
-
-```bash
-# 安装项目依赖
-uv pip install -r pyproject.toml
-
-# 创建数据目录
-mkdir -p data
-
-# 运行程序
-python app/hajimi_king.py
-```
-
-### 5. 本地运行管理 🎮
-
-```bash
-# 查看日志文件
-tail -f data/keys/keys_valid_detail_*.log
-
-# 查看找到的有效密钥
-cat data/keys/keys_valid_*.txt
-
-# 停止程序
-Ctrl + C
-```
-
----
-
-## 🐳 Docker部署 🌊
-
-### 1. 准备部署脚本 📜
-
-```bash
-# 将deploy.sh复制到父目录
-cd ${deploy_directory}
-
-git clone <repository-url>
-
-cp hajimi-king/first_deploy.sh ./
-
-# 或者直接下载项目到某个目录，确保目录结构如下：
-# deploy_directory/
-# ├── first_deploy.sh
-# └── hajimi-king/
-#     ├── app
-#     └── ...
-```
-
-### 2. 一键部署 🚀
-
-```bash
-# 运行部署脚本
-chmod +x first_deploy.sh
-
-./first_deploy.sh
-```
-
-部署脚本会自动完成以下步骤：
-1. ✅ 检查Docker环境 🔍
-2. ✅ 创建data目录 📁
-3. ✅ 复制配置文件（.env, queries.txt）📄
-4. ✅ 交互式配置GitHub Token 🎛️
-5. ✅ 构建Docker镜像 🏗️
-6. ✅ 启动服务 🎉
-
-### 3. Docker服务管理 🎛️
-
-```bash
-# 查看服务状态
-docker-compose ps
-
-# 查看实时日志
-docker-compose logs -f
-
-# 停止服务
-docker-compose down
-
-# 重启服务
-docker-compose up -d
-
-# 进入容器调试
-docker-compose exec hajimi-king /bin/bash
-```
-
-### 4. 文件位置 🗺️
-
-部署后的文件结构：
-```
-deploy_directory/
-├── .env                    # 环境配置
-├── docker-compose.yml      # Docker编排配置
-├── data/                   # 数据目录
-│   ├── queries.txt         # 搜索查询配置
-│   ├── keys_valid_*.txt    # 发现的有效密钥
-│   ├── keys_valid_detail_*.log  # 详细日志
-│   └── scanned_shas.txt    # 已扫描文件记录
-└── hajimi-king/            # 源码目录
-```
-
----
-
-## ⚙️ 配置变量说明 📖
-
-以下是所有可配置的环境变量，在 `.env` 文件中设置：
-
-### 🔴 必填配置 ⚠️
-
-| 变量名 | 说明 | 示例值 |
-|--------|------|--------|
-| `GITHUB_TOKENS` | GitHub API访问令牌，多个用逗号分隔 🎫 | `ghp_token1,ghp_token2` |
-
-### 🟡 重要配置（建议了解）🤓
-
-| 变量名 | 默认值                | 说明                        |
-|--------|--------------------|---------------------------|
-| `DATA_PATH` | `./data`           | 数据存储目录路径 📂                  |
-| `DATE_RANGE_DAYS` | `730`              | 仓库年龄过滤（天数），只扫描指定天数内的仓库 📅    |
-| `QUERIES_FILE` | `queries.txt`      | 搜索查询配置文件路径（表达式严重影响搜索的高效性) 🎯 |
-| `HAJIMI_CHECK_MODEL` | `gemini-2.5-flash` | 用于验证key有效的模型 🤖              |
-
-### 🟢 可选配置（不懂就别动）😅
-
-| 变量名 | 默认值                                                                | 说明 |
-|--------|--------------------------------------------------------------------|------|
-| `PROXY` | 空                                                                  | 代理服务器地址，格式：`http://proxy:port` 🌐 |
-| `VALID_KEY_DETAIL_PREFIX` | `logs/keys_valid_detail_`                                          | 详细日志文件名前缀 📝 |
-| `VALID_KEY_PREFIX` | `keys/keys_valid_`                                                 | 有效密钥文件名前缀 🗝️ |
-| `RATE_LIMITED_KEY_PREFIX` | `keys/key_429_`                                                    | 频率限制密钥文件名前缀 ⏰ |
-| `RATE_LIMITED_KEY_DETAIL_PREFIX` | `logs/key_429_detail_`                                             | 频率限制详细日志文件名前缀 📊 |
-| `SCANNED_SHAS_FILE` | `scanned_shas.txt`                                                 | 已扫描文件SHA记录文件名 📋 |
-| `FILE_PATH_BLACKLIST` | `readme,docs,doc/,.md,example,sample,tutorial,test,spec,demo,mock` | 文件路径黑名单，逗号分隔 🚫 |
-
-### 配置文件示例 💫
-
-完整的 `.env` 文件示例：
-
-```bash
-# 必填配置
-GITHUB_TOKENS=ghp_your_token_here_1,ghp_your_token_here_2
-
-# 重要配置（可选修改）
-DATA_PATH=./data
-DATE_RANGE_DAYS=730
-QUERIES_FILE=queries.txt
-HAJIMI_CHECK_MODEL=gemini-2.5-flash-preview-05-20
-
-# 高级配置（建议保持默认）
-PROXY=
-VALID_KEY_DETAIL_PREFIX=logs/keys_valid_detail_
-VALID_KEY_PREFIX=keys/keys_valid_
-RATE_LIMITED_KEY_PREFIX=keys/key_429_
-RATE_LIMITED_KEY_DETAIL_PREFIX=logs/key_429_detail_
-SCANNED_SHAS_FILE=scanned_shas.txt
-FILE_PATH_BLACKLIST=readme,docs,doc/,.md,example,sample,tutorial,test,spec,demo,mock
-```
-
-### 查询配置文件 🔍
-
-编辑 `queries.txt` 文件自定义搜索规则：
-
-⚠️ **重要提醒**：query 是本项目的核心！好的表达式可以让搜索更高效，需要发挥自己的想象力！🧠💡
-
-```bash
-# GitHub搜索查询配置文件
-# 每行一个查询语句，支持GitHub搜索语法
-# 以#开头的行为注释，空行会被忽略
-
-# 基础搜索
-AIzaSy in:file
-```
-
-> 📖 **搜索语法参考**：[GitHub Code Search Syntax](https://docs.github.com/en/search-github/searching-on-github/searching-code) 📚  
-> 🎯 **核心提示**：创造性的查询表达式是成功的关键，多尝试不同的组合！
-
----
-
-## 🔒 安全注意事项 🛡️
-
-- ✅ GitHub Token权限最小化（只需`public_repo`读取权限）🔐
-- ✅ 定期轮换GitHub Token 🔄
-- ✅ 不要将真实的API密钥提交到版本控制 🙈
-- ✅ 定期检查和清理发现的密钥文件 🧹
-- ✅ 运行在安全的网络环境中 🏠
-
-## 📞 故障排除 🩺
-
-| 问题 | 解决方案 |
-|------|----------|
-| GitHub API限流 ⏰ | 添加更多GitHub Token或减少并发数 🔧 |
-| Docker构建失败 💥 | 检查网络连接，清理Docker缓存 🧽 |
-| 找不到密钥 🔍 | 检查queries.txt配置，调整搜索关键词 🎯 |
-| 容器启动失败 🚫 | 检查.env文件配置，确保GitHub Token有效 ✅ |
-
----
-
-💖 **享受使用 Hajimi King 的快乐时光！** 🎉✨🎊
-
+**Happy Scanning! 🔍✨**
