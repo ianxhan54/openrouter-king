@@ -156,28 +156,24 @@ async function refresh() {
 }
 // 当前展示的 provider（默认全部）
 let currentProvider = 'gemini';
-
-function setProvider(p) {
-  currentProvider = p;
-// 分页与状态筛选
 let page = 1;
 const pageSize = 20;
-let statusFilter = 'all'; // all|valid|429|forbidden|other
+let statusFilter = 'all';
 
-function setStatusFilter(s){ statusFilter = s; page = 1; refresh(); }
-function setPage(p){ page = Math.max(1, p); refresh(); }
-window.copyCurrentPage = copyCurrentPage;
 
-async function copyCurrentPage(){
-  const items = (window.__pageItems||[]).map(k=>k.key).filter(Boolean);
-  if(!items.length) return showNotification('当前页没有可复制的 Key','warning');
-  copyToClipboard(items.join('\n'));
-}
-
+function setProvider(p) {
+  page = 1;
   updateProviderButtons();
   refresh();
 }
+
+function setStatusFilter(s){ statusFilter = s; page = 1; refresh(); }
+function setPage(pn){ page = Math.max(1, pn); refresh(); }
+
 window.setProvider = setProvider;
+window.setStatusFilter = setStatusFilter;
+window.setPage = setPage;
+
 
 function updateProviderButtons() {
   try {
@@ -194,6 +190,8 @@ async function copyAll() {
   const all = showProviders.flatMap((p) => (grouped[p] || []).map((k) => k.key)).filter(Boolean);
   if (!all.length) return showNotification("当前筛选平台暂无可复制的 Key", "warning");
   copyToClipboard(all.join("\n"));
+}
+
 async function adminLogin(){
   const pwd = (document.getElementById('adminPwd')?.value || '').trim();
   if(!pwd) return showNotification('请输入密码','warning');
