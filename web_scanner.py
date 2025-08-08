@@ -77,32 +77,21 @@ config = {
         '"sk-or-v1-" extension:json -path:docs -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
         '"sk-or-" filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
         '"OPENROUTER_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
-
         # OpenAI
         '"OPENAI_API_KEY" -path:docs -path:doc -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
         '"sk-" filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
         '"sk-" extension:env -path:docs -path:example -path:examples -path:test -path:tests',
         '"Authorization" "Bearer sk-" language:JavaScript -path:docs -path:example -path:examples -path:test -path:tests',
-
         # Anthropic (Claude)
         '"ANTHROPIC_API_KEY" -path:docs -path:doc -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
         '"sk-ant-" extension:env -path:docs -path:example -path:examples -path:test -path:tests',
         '"sk-ant-" filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
-
         # Google Gemini
         '"GEMINI_API_KEY" -path:docs -path:doc -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
         '"AIzaSy" extension:js -path:docs -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
         '"AIzaSy" extension:ts -path:docs -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
         '"AIzaSy" extension:py -path:docs -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
         '"generativelanguage.googleapis.com" "key=" -path:docs -path:example -path:examples -path:samples -path:test -path:tests -path:spec',
-    ],
-        '"ANTHROPIC_API_KEY"',
-        'anthropic "api_key"',
-        '"sk-ant-"',
-        # Google Gemini
-        '"GEMINI_API_KEY"',
-        '"AIzaSy"',
-        'generativelanguage.googleapis.com "key="'
     ],
     'scan_interval': 60,  # 秒
     'max_results_per_query': 100,
