@@ -1,9 +1,11 @@
-# OpenRouter API Key Scanner v1.0.0
+# OpenRouter King v1.0.0
 
 一个强大的GitHub API密钥扫描工具，专门用于发现和验证各种AI服务的API密钥，包括OpenRouter、OpenAI、Anthropic Claude、Google Gemini等。
 
 **版本**: 1.0.0  
-**发布日期**: 2025-08-08
+**发布日期**: 2025-08-08  
+**作者**: xmdbd  
+**仓库**: https://github.com/xmdbd/openrouter-king
 
 ## 🌟 特性
 
@@ -38,8 +40,8 @@
 
 1. **克隆项目**
    ```bash
-   git clone https://github.com/your-repo/openrouter-scanner.git
-   cd openrouter-scanner
+   git clone https://github.com/xmdbd/openrouter-king.git
+   cd openrouter-king
    ```
 
 2. **安装依赖**
@@ -85,8 +87,8 @@
 3. **克隆项目到服务器**
    ```bash
    cd /opt
-   git clone https://github.com/your-repo/openrouter-scanner.git
-   cd openrouter-scanner
+   git clone https://github.com/xmdbd/openrouter-king.git
+   cd openrouter-king
    ```
 
 4. **安装Python依赖**
@@ -96,18 +98,19 @@
 
 5. **创建systemd服务文件**
    ```bash
-   cat > /etc/systemd/system/openrouter-scanner.service << EOF
+   cat > /etc/systemd/system/openrouter-king.service << EOF
    [Unit]
-   Description=OpenRouter API Key Scanner
+   Description=OpenRouter King Scanner Service
    After=network.target
 
    [Service]
    Type=simple
    User=root
-   WorkingDirectory=/opt/openrouter-scanner
-   ExecStart=/usr/bin/python3 /opt/openrouter-scanner/app.py
+   WorkingDirectory=/opt/openrouter-king
+   ExecStart=/usr/bin/python3 app.py
    Restart=always
    RestartSec=10
+   Environment=FLASK_ENV=production
 
    [Install]
    WantedBy=multi-user.target
@@ -117,9 +120,9 @@
 6. **启动并启用服务**
    ```bash
    systemctl daemon-reload
-   systemctl start openrouter-scanner
-   systemctl enable openrouter-scanner
-   systemctl status openrouter-scanner
+   systemctl start openrouter-king
+   systemctl enable openrouter-king
+   systemctl status openrouter-king
    ```
 
 7. **配置防火墙**
@@ -136,41 +139,10 @@
 8. **访问应用**
    - 浏览器访问：http://your-server-ip:4567
    - 使用管理员密码 `Kuns123456.` 登录
+   
+   **注意**: 首次部署后建议立即修改默认密码以确保安全性
 
-### 方式二：使用 Docker 容器
-
-1. **安装Docker**
-   ```bash
-   curl -fsSL https://get.docker.com | sh
-   systemctl start docker
-   systemctl enable docker
-   ```
-
-2. **创建Dockerfile**
-   ```bash
-   cat > Dockerfile << EOF
-   FROM python:3.9-slim
-   WORKDIR /app
-   COPY requirements.txt .
-   RUN pip install --no-cache-dir -r requirements.txt
-   COPY . .
-   EXPOSE 4567
-   CMD ["python", "app.py"]
-   EOF
-   ```
-
-3. **构建并运行容器**
-   ```bash
-   docker build -t openrouter-scanner .
-   docker run -d \
-     --name scanner \
-     --restart always \
-     -p 4567:4567 \
-     -v $(pwd)/app.db:/app/app.db \
-     openrouter-scanner
-   ```
-
-### 方式三：使用 screen/tmux 后台运行
+### 方式二：使用 screen/tmux 后台运行
 
 1. **安装screen**
    ```bash
@@ -185,7 +157,7 @@
 
 3. **在screen中运行应用**
    ```bash
-   cd /opt/openrouter-scanner
+   cd /opt/openrouter-king
    python3 app.py
    ```
 
@@ -223,13 +195,25 @@
 
 4. **定期备份数据库**
    ```bash
+   # 创建备份目录
+   mkdir -p /backup
+   
    # 创建备份脚本
-   echo '#!/bin/bash
-   cp /opt/openrouter-scanner/app.db /backup/app.db.$(date +%Y%m%d)
-   find /backup -name "app.db.*" -mtime +7 -delete' > /opt/backup.sh
+   cat > /opt/backup.sh << 'EOF'
+   #!/bin/bash
+   # 备份数据库
+   cp /opt/openrouter-king/app.db /backup/app.db.$(date +%Y%m%d_%H%M%S)
+   
+   # 删除7天前的备份
+   find /backup -name "app.db.*" -mtime +7 -delete
+   
+   # 记录备份日志
+   echo "$(date): Database backup completed" >> /var/log/backup.log
+   EOF
+   
    chmod +x /opt/backup.sh
    
-   # 添加到crontab
+   # 添加到crontab (每天凌晨2点备份)
    echo "0 2 * * * /opt/backup.sh" | crontab -
    ```
 
@@ -238,10 +222,10 @@
 1. **查看服务日志**
    ```bash
    # systemd服务
-   journalctl -u openrouter-scanner -f
+   journalctl -u openrouter-king -f
    
-   # Docker容器
-   docker logs -f scanner
+   # screen会话
+   screen -r scanner
    ```
 
 2. **检查端口占用**
@@ -252,14 +236,26 @@
 
 3. **权限问题**
    ```bash
-   chmod 755 /opt/openrouter-scanner
-   chmod 644 /opt/openrouter-scanner/app.db
+   chmod 755 /opt/openrouter-king
+   chmod 644 /opt/openrouter-king/app.db
    ```
 
 4. **Python依赖问题**
    ```bash
    pip3 install --upgrade pip
    pip3 install -r requirements.txt --force-reinstall
+   ```
+
+5. **服务无法启动**
+   ```bash
+   # 检查Python路径
+   which python3
+   
+   # 检查服务文件语法
+   systemd-analyze verify /etc/systemd/system/openrouter-king.service
+   
+   # 手动测试启动
+   cd /opt/openrouter-king && python3 app.py
    ```
 
 ## ⚙️ 配置说明
@@ -269,25 +265,25 @@
 - 登录后可配置GitHub Token和扫描参数
 
 ### 扫描参数
-- **扫描间隔**：40秒（可调整）
+- **扫描间隔**：120秒（默认，可调整）
 - **每查询结果数**：100个
 - **时间范围**：365天内的仓库
-- **查询总数**：25个精选查询
+- **查询总数**：28个精选查询
 
 ### 查询分布
-- **Gemini查询**：5个（优先级最高）
-- **OpenAI查询**：6个（全面覆盖）
-- **Anthropic查询**：4个（精选重点）
-- **OpenRouter查询**：3个（专项搜索）
-- **通用查询**：7个（兜底搜索）
+- **OpenRouter查询**：10个（专项搜索）
+- **OpenAI查询**：8个（全面覆盖）
+- **Anthropic查询**：3个（精选重点）
+- **Gemini查询**：4个（高价值目标）
+- **通用配置文件**：3个（兜底搜索）
 
 ## 📊 性能指标
 
 ### 扫描能力
-- **完整周期**：16.7分钟
-- **日循环次数**：86轮
-- **日扫描容量**：216,000个文件
-- **发现效率**：高质量密钥发现
+- **完整周期**：约15-20分钟
+- **日循环次数**：72-96轮
+- **日扫描容量**：200,000+个文件
+- **发现效率**：高质量密钥发现，智能过滤误报
 
 ### 验证精度
 - **OpenRouter验证**：使用实际聊天API验证
@@ -310,17 +306,20 @@
 ## 📁 项目结构
 
 ```
-openrouter-scanner/
+openrouter-king/
 ├── app.py              # 主应用程序
-├── app.db              # SQLite数据库
+├── requirements.txt    # Python依赖
+├── README.md           # 项目文档
+├── VERSION             # 版本号
+├── CHANGELOG.md        # 更新日志
+├── app.db              # SQLite数据库（自动生成）
 ├── static/             # 静态资源
-│   ├── css/app.css     # 样式文件
-│   └── js/app.js       # JavaScript逻辑
-├── templates/          # HTML模板
-│   └── index.html      # 主页面
-└── example/            # 参考实现
-    ├── app/hajimi_king.py
-    └── utils/
+│   ├── css/
+│   │   └── app.css     # 样式文件
+│   └── js/
+│       └── app.js      # 前端逻辑
+└── templates/          # HTML模板
+    └── index.html      # Web界面
 ```
 
 ## 🔧 API端点
@@ -357,20 +356,21 @@ openrouter-scanner/
 
 欢迎提交Issue和Pull Request来改进项目！
 
-### 开发环境
-1. Fork项目
-2. 创建功能分支
-3. 提交更改
-4. 创建Pull Request
+### 提交Issue
+- 在 [GitHub Issues](https://github.com/xmdbd/openrouter-king/issues) 提交问题
+- 详细描述问题和复现步骤
+- 提供相关日志和截图
 
-### 代码规范
-- 遵循PEP 8 Python编码规范
-- JavaScript使用ES6+语法
-- 添加适当的注释和文档
+### 贡献代码
+1. Fork 本仓库
+2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 创建 Pull Request
 
 ## 📄 许可证
 
-本项目采用MIT许可证，详见LICENSE文件。
+本项目采用 MIT 许可证。详见 [LICENSE](https://github.com/xmdbd/openrouter-king/blob/main/LICENSE) 文件。
 
 ## ⚠️ 免责声明
 
@@ -382,13 +382,18 @@ openrouter-scanner/
 
 使用本工具产生的任何后果由使用者承担。
 
-## 📞 支持
+## 📞 联系与支持
 
-如有问题或建议，请：
-- 提交GitHub Issue
-- 发送邮件至开发者
-- 查看项目Wiki获取更多信息
+- **GitHub**: [@xmdbd](https://github.com/xmdbd)
+- **Issues**: [提交问题](https://github.com/xmdbd/openrouter-king/issues)
+- **仓库**: [openrouter-king](https://github.com/xmdbd/openrouter-king)
+
+## ⭐ Star History
+
+如果这个项目对你有帮助，请给一个 Star ⭐ 支持一下！
 
 ---
+
+**Made with ❤️ by [xmdbd](https://github.com/xmdbd)**
 
 **Happy Scanning! 🔍✨**
