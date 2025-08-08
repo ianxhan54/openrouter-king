@@ -14,7 +14,19 @@
 
   async function fetchJSON(url){ 
     try {
-      const r=await fetch(url); 
+      // 添加时间戳防止缓存
+      const cacheBuster = new Date().getTime();
+      const separator = url.includes('?') ? '&' : '?';
+      const finalUrl = `${url}${separator}_t=${cacheBuster}`;
+      
+      const r=await fetch(finalUrl, {
+        cache: 'no-cache',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }); 
       if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`);
       return r.json(); 
     } catch(e) {

@@ -180,9 +180,9 @@ def _validate_openrouter_key(kv: str) -> int:
         'X-Title': 'Key Validation Test'
     }
     
-    # 使用免费模型进行测试
+    # 使用最新的免费模型进行测试 (google/gemma-2-9b-it:free 是最新的免费模型之一)
     payload = {
-        'model': 'meta-llama/llama-3.2-1b-instruct:free',
+        'model': 'google/gemma-2-9b-it:free',
         'messages': [{'role': 'user', 'content': 'test'}],
         'max_tokens': 1
     }
@@ -202,8 +202,8 @@ def _validate_gemini_key(kv: str) -> int:
     """使用实际生成API验证Gemini密钥"""
     import requests
     
-    # 使用 generateContent API 进行真实验证
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={kv}'
+    # 使用 gemini-1.5-flash 模型进行验证（更新的模型）
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={kv}'
     
     headers = {
         'Content-Type': 'application/json',
@@ -215,7 +215,8 @@ def _validate_gemini_key(kv: str) -> int:
             'parts': [{'text': 'test'}]
         }],
         'generationConfig': {
-            'maxOutputTokens': 1
+            'maxOutputTokens': 1,
+            'temperature': 0
         }
     }
     
@@ -223,23 +224,20 @@ def _validate_gemini_key(kv: str) -> int:
         response = requests.post(url, headers=headers, json=payload, timeout=15)
         
         # 检查HTTP状态码
-        if response.status_code != 200:
+        if response.status_code == 200:
+            # 验证响应是否包含有效内容
+            try:
+                data = response.json()
+                if 'candidates' in data:
+                    return 200  # 成功
+                elif 'error' in data:
+                    return 403  # 有错误
+                else:
+                    return 403  # 未知格式
+            except:
+                return 403
+        else:
             return response.status_code
-        
-        # 检查响应内容是否包含错误
-        try:
-            data = response.json()
-            # 如果有error字段，说明密钥无效
-            if 'error' in data:
-                error_code = data.get('error', {}).get('code', 403)
-                return error_code
-            # 如果有candidates字段，说明成功
-            elif 'candidates' in data:
-                return 200
-            else:
-                return 403  # 未知响应格式，视为无效
-        except:
-            return 403  # JSON解析失败，视为无效
             
     except Exception:
         return -1
@@ -253,9 +251,9 @@ def _validate_openai_key(kv: str) -> int:
         'Content-Type': 'application/json'
     }
     
-    # 使用最便宜的模型进行最小测试
+    # 使用最新的便宜模型进行测试 (gpt-4o-mini 是最新且便宜的)
     payload = {
-        'model': 'gpt-3.5-turbo',
+        'model': 'gpt-4o-mini',
         'messages': [{'role': 'user', 'content': 'hi'}],
         'max_tokens': 1
     }
@@ -293,9 +291,9 @@ def _validate_anthropic_key(kv: str) -> int:
         'content-type': 'application/json'
     }
     
-    # 使用Claude最小测试
+    # 使用最新的Claude 3.5 Haiku模型（最便宜）
     payload = {
-        'model': 'claude-3-haiku-20240307',
+        'model': 'claude-3-5-haiku-20241022',
         'max_tokens': 1,
         'messages': [{'role': 'user', 'content': 'hi'}]
     }
@@ -846,14 +844,18 @@ def api_keys():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT key_value, key_type, status, found_at, last_checked, balance FROM keys ORDER BY found_at DESC")
-    flat = []
+    keys = []
     for row in c.fetchall():
-        flat.append({
-            'key': row[0], 'type': row[1], 'status': row[2], 'found_at': row[3], 'last_checked': row[4], 'balance': row[5],
-            'key_display': (row[0][:15] + '...' + row[0][-5:]) if row[0] and len(row[0])>20 else row[0]
+        keys.append({
+            'key': row[0],
+            'type': row[1], 
+            'status': row[2],
+            'found_at': row[3],
+            'last_checked': row[4],
+            'balance': row[5]
         })
     conn.close()
-    return jsonify(flat)
+    return jsonify(keys)
 
 @app.route('/api/stats')
 def api_stats():
