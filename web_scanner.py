@@ -278,8 +278,6 @@ def validate_gemini_key(api_key: str) -> Dict:
         log_message(f"Gemini验证失败: {str(e)}", "error")
         return {"valid": False}
 
-            continue
-    return found
 
 def save_persisted_config():
     _config_set('web_config', config)
@@ -377,6 +375,20 @@ def search_github_any(query: str) -> (List[Dict], Optional[str]):
 
             if resp.status_code == 200:
                 data = resp.json()
+                mark_token_status(token, 'ok', 200)
+                return data.get("items", []), token
+            if resp.status_code in (403, 429):
+                mark_token_status(token, 'rate_limited', resp.status_code)
+                log_message(f"GitHub限流/拒绝: {resp.status_code}，更换token重试", "warning")
+                continue
+            else:
+                mark_token_status(token, 'error', resp.status_code)
+                log_message(f"GitHub API 错误: {resp.status_code}", "error")
+        except Exception as e:
+            mark_token_status(token, 'error', -1)
+            log_message(f"搜索失败: {str(e)}", "error")
+    return [], None
+
 # 扫描趋势：每分钟累计快照（持久化）
 
 def record_scan_trend(delta: int):
@@ -388,16 +400,6 @@ def record_scan_trend(delta: int):
         _config_set('scan_trend', trend)
     except Exception:
         pass
-
-                return data.get("items", []), token
-            # 速率限制或权限问题 => 尝试下一个token
-            if resp.status_code in (403, 429):
-                log_message(f"GitHub限流/拒绝: {resp.status_code}，更换token重试", "warning")
-                continue
-            else:
-                log_message(f"GitHub API 错误: {resp.status_code}", "error")
-        except Exception as e:
-            log_message(f"搜索失败: {str(e)}", "error")
     return [], None
 
 
