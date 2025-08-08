@@ -83,12 +83,20 @@ python app.py
 
 ### Linux/Mac 用户
 ```bash
-# 方式1: 一键运行脚本
+# 方式1: 一键运行脚本（推荐）
 curl -sSL https://raw.githubusercontent.com/xmdbd/openrouter-king/main/quick-start.sh | bash
 
-# 方式2: 手动执行
+# 方式2: 手动执行（使用虚拟环境）
 git clone https://github.com/xmdbd/openrouter-king.git && cd openrouter-king
-pip3 install flask flask-cors requests
+python3 -m venv venv
+source venv/bin/activate
+pip install flask flask-cors requests
+python app.py
+
+# 方式3: 系统包安装（Ubuntu/Debian）
+git clone https://github.com/xmdbd/openrouter-king.git && cd openrouter-king
+sudo apt update
+sudo apt install python3-flask python3-flask-cors python3-requests
 python3 app.py
 ```
 
@@ -99,6 +107,12 @@ python3 app.py
 4. 添加你的GitHub Token开始扫描
 
 **就这么简单！** 🎉
+
+### 常见问题
+- **遇到 `externally-managed-environment` 错误？** 
+  查看 [安装问题解决指南](install.md)
+- **权限不足？** 在命令前加 `sudo`
+- **找不到模块？** 确保已激活虚拟环境：`source venv/bin/activate`
 
 ## 🌐 云服务器部署
 
@@ -113,7 +127,9 @@ python3 app.py
    ```bash
    # Ubuntu/Debian
    apt update && apt upgrade -y
-   apt install python3 python3-pip git -y
+   apt install python3 python3-pip python3-venv python3-full git -y
+   # 可选：直接安装系统包
+   apt install python3-flask python3-flask-cors python3-requests -y
    
    # CentOS/RHEL
    yum update -y
@@ -129,7 +145,16 @@ python3 app.py
 
 4. **安装Python依赖**
    ```bash
-   pip3 install -r requirements.txt
+   # 方式1: 使用虚拟环境（推荐）
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   
+   # 方式2: 系统包安装（Ubuntu/Debian）
+   sudo apt install python3-flask python3-flask-cors python3-requests
+   
+   # 方式3: 强制安装到系统（不推荐）
+   pip3 install -r requirements.txt --break-system-packages
    ```
 
 5. **创建systemd服务文件**
@@ -143,10 +168,11 @@ python3 app.py
    Type=simple
    User=root
    WorkingDirectory=/opt/openrouter-king
-   ExecStart=/usr/bin/python3 app.py
+   ExecStart=/opt/openrouter-king/venv/bin/python app.py
    Restart=always
    RestartSec=10
    Environment=FLASK_ENV=production
+   Environment=PATH=/opt/openrouter-king/venv/bin:/usr/local/bin:/usr/bin:/bin
 
    [Install]
    WantedBy=multi-user.target
@@ -278,8 +304,18 @@ python3 app.py
 
 4. **Python依赖问题**
    ```bash
-   pip3 install --upgrade pip
-   pip3 install -r requirements.txt --force-reinstall
+   # 虚拟环境方式
+   cd /opt/openrouter-king
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install --upgrade pip
+   pip install flask flask-cors requests
+   
+   # 系统包方式
+   sudo apt install python3-flask python3-flask-cors python3-requests
+   
+   # 强制安装方式（最后选择）
+   pip3 install flask flask-cors requests --break-system-packages
    ```
 
 5. **服务无法启动**
@@ -291,7 +327,11 @@ python3 app.py
    systemd-analyze verify /etc/systemd/system/openrouter-king.service
    
    # 手动测试启动
-   cd /opt/openrouter-king && python3 app.py
+   cd /opt/openrouter-king
+   # 如果使用虚拟环境
+   source venv/bin/activate && python app.py
+   # 或者直接使用系统Python
+   python3 app.py
    ```
 
 ## ⚙️ 配置说明
@@ -350,6 +390,7 @@ openrouter-king/
 ├── CHANGELOG.md        # 更新日志
 ├── quick-start.sh      # Linux/Mac快速启动脚本
 ├── quick-start.bat     # Windows快速启动脚本
+├── install.md          # 安装问题解决指南
 ├── app.db              # SQLite数据库（自动生成）
 ├── static/             # 静态资源
 │   ├── css/
