@@ -1,8 +1,8 @@
-# OpenRouter King v1.0.0
+# OpenRouter King v1.1.0
 
 一个强大的GitHub API密钥扫描工具，专门用于发现和验证各种AI服务的API密钥，包括OpenRouter、OpenAI、Anthropic Claude、Google Gemini等。
 
-**版本**: 1.0.0  
+**版本**: 1.1.0  
 **发布日期**: 2025-08-08  
 **作者**: xmdbd  
 **仓库**: https://github.com/xmdbd/openrouter-king
