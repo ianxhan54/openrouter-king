@@ -169,8 +169,8 @@
     const data={ 
       series:[
         {name:'Total/min', data: pick(s.trend_total)}, 
-        {name:'Valid (200) - Gemini Only', data: pick(s.trend_valid)}, 
-        {name:'429 - Gemini Only', data: pick(s.trend_429)}
+        {name:'Valid (200)', data: pick(s.trend_valid)}, 
+        {name:'429', data: pick(s.trend_429)}
       ], 
       xaxis:{ categories:labels } 
     };
