@@ -1,0 +1,18 @@
+[project]
+name = "hajimi-king"
+version = "0.2.0"
+description = "GitHub API key scanner supporting multiple providers (Gemini, OpenRouter)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "python-dotenv>=1.1.1",
+    "requests>=2.32.4",
+]
+
+[project.optional-dependencies]
+gemini = [
+    "google-generativeai>=0.8.5",
+]
+all = [
+    "google-generativeai>=0.8.5",
+]

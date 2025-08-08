@@ -98,3 +98,8 @@ hajimi_king.db
 *.bak
 *.backup
 *.orig
+
+
+# Windows reserved device name workaround
+# Avoid indexing a path named 'nul' which breaks Git on Windows
+nul
