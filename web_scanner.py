@@ -5,7 +5,7 @@ Web Scanner - 极简版（自动扫描 + 内置查询 + 内置Tokens）
 - 页面仅用于查看和复制Key（四平台分区）
 """
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session
 from flask_cors import CORS
 from flask_socketio import SocketIO
 import threading
@@ -33,6 +33,8 @@ EMBEDDED_GITHUB_TOKENS: List[str] = [
 ]
 
 app = Flask(__name__)
+ADMIN_PASSWORD = 'Lcg040510.'
+
 app.config['SECRET_KEY'] = 'lightweight-web-scanner'
 
 # 允许所有跨域（可按需收紧）
@@ -386,6 +388,18 @@ def record_scan_trend(delta: int):
         _config_set('scan_trend', trend)
     except Exception:
         pass
+# 通用趋势记录（按分钟聚合）
+
+def record_metric_trend(bucket_key: str, delta: int):
+    try:
+        now_min = datetime.now().strftime('%Y-%m-%d %H:%M')
+        bucket = _config_get(bucket_key, {}) or {}
+        cur = int(bucket.get(now_min, 0))
+        bucket[now_min] = cur + max(0, int(delta))
+        _config_set(bucket_key, bucket)
+    except Exception:
+        pass
+
 
 
 # 获取文件内容
@@ -401,18 +415,6 @@ def get_file_content(item: Dict, token: str) -> Optional[str]:
 
         if response.status_code == 200:
             return response.text
-# 通用趋势记录（按分钟聚合）
-
-def record_metric_trend(bucket_key: str, delta: int):
-    try:
-        now_min = datetime.now().strftime('%Y-%m-%d %H:%M')
-        bucket = _config_get(bucket_key, {}) or {}
-        cur = int(bucket.get(now_min, 0))
-        bucket[now_min] = cur + max(0, int(delta))
-        _config_set(bucket_key, bucket)
-    except Exception:
-        pass
-
 
         # 尝试 master 分支
         raw_url = f"https://raw.githubusercontent.com/{repo}/master/{path}"
@@ -586,6 +588,44 @@ def scanner_worker():
 
         log_message(f"扫描完成，{config['scan_interval']}秒后继续", "info")
         time.sleep(config['scan_interval'])
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    return jsonify({
+        'github_tokens': config.get('github_tokens') or [],
+        'scan_queries': config.get('scan_queries') or [],
+        'scan_interval': config.get('scan_interval', 60),
+        'max_results_per_query': config.get('max_results_per_query', 100),
+    })
+
+@app.route('/api/config', methods=['POST'])
+def set_config():
+    if not session.get('is_admin'):
+        return jsonify({'status': 'unauthorized'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    tokens = data.get('github_tokens') or []
+    if isinstance(tokens, str):
+        tokens = [t.strip() for t in tokens.replace('\n', ',').split(',') if t.strip()]
+    config['github_tokens'] = tokens
+    if 'scan_queries' in data: config['scan_queries'] = [q for q in data['scan_queries'] if q]
+@app.route('/api/admin/login', methods=['POST'])
+def admin_login():
+    data = request.get_json(force=True, silent=True) or {}
+    pwd = (data.get('password') or '').strip()
+    ok = (pwd == ADMIN_PASSWORD)
+    if ok:
+        session['is_admin'] = True
+        return jsonify({'ok': True})
+    return jsonify({'ok': False}), 401
+
+@app.route('/api/admin/logout', methods=['POST'])
+def admin_logout():
+    session.pop('is_admin', None)
+    return jsonify({'ok': True})
+
+    if 'scan_interval' in data: config['scan_interval'] = int(data['scan_interval'])
+    if 'max_results_per_query' in data: config['max_results_per_query'] = int(data['max_results_per_query'])
+    return jsonify({'status': 'success'})
+
 
 """Flask 路由（极简）」"""
 @app.route('/')

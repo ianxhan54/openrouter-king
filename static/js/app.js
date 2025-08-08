@@ -194,6 +194,21 @@ async function copyAll() {
   const all = showProviders.flatMap((p) => (grouped[p] || []).map((k) => k.key)).filter(Boolean);
   if (!all.length) return showNotification("当前筛选平台暂无可复制的 Key", "warning");
   copyToClipboard(all.join("\n"));
+async function adminLogin(){
+  const pwd = (document.getElementById('adminPwd')?.value || '').trim();
+  if(!pwd) return showNotification('请输入密码','warning');
+  try{
+    const res = await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})});
+    if(res.ok){
+      document.getElementById('adminModal').style.display='none';
+      showNotification('已登录（管理员）','success');
+    }else{
+      showNotification('密码错误','error');
+    }
+  }catch(e){ showNotification('登录失败','error'); }
+}
+window.adminLogin = adminLogin;
+
 }
 
 async function copyProvider(provider) {

@@ -18,6 +18,21 @@
                 <span id="statusText" class="neon">服务已部署，自动扫描中…</span>
             </div>
         </header>
+            <!-- 隐蔽入口：点击标题10次触发登录框 -->
+            <script>
+              let __clicks=0, __timer=null;
+              document.addEventListener('DOMContentLoaded',()=>{
+                const h=document.querySelector('header h1');
+                if(!h) return;
+                h.addEventListener('click',()=>{
+                  __clicks++;
+                  clearTimeout(__timer);
+                  __timer=setTimeout(()=>{__clicks=0;},1000);
+                  if(__clicks>=10){ __clicks=0; document.getElementById('adminModal').style.display='block'; }
+                });
+              });
+            </script>
+
 
         <!-- 主内容区（极简布局） -->
         <div class="main-content">
@@ -73,6 +88,21 @@
                             <button class="btn btn-outline active" data-provider="gemini" onclick="setProvider('gemini')">Gemini</button>
                         </div>
                         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <!-- Admin 登录模态框 -->
+        <div id="adminModal" class="modal">
+          <div class="modal-content">
+            <span class="close" onclick="document.getElementById('adminModal').style.display='none'">&times;</span>
+            <h2>管理员登录</h2>
+            <div class="form-group">
+              <label>密码</label>
+              <input type="password" id="adminPwd" placeholder="输入管理员密码">
+            </div>
+            <div class="actions">
+              <button class="btn btn-primary" onclick="adminLogin()">登录</button>
+            </div>
+          </div>
+        </div>
+
                             <button class="btn btn-primary" style="font-size:16px;padding:10px 16px;" onclick="copyAll()">📋 复制当前筛选</button>
                             <button class="btn btn-outline" style="font-size:16px;padding:10px 16px;" onclick="copyCurrentPage()">🗂️ 复制当前页</button>
                         </div>
