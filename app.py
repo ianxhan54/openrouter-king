@@ -200,33 +200,154 @@ def _validate_openrouter_key(kv: str) -> int:
     except Exception:
         return -1
 
+def _validate_gemini_key(kv: str) -> int:
+    """使用实际生成API验证Gemini密钥"""
+    import requests
+    
+    # 使用 generateContent API 进行真实验证
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={kv}'
+    
+    headers = {
+        'Content-Type': 'application/json',
+    }
+    
+    # 最小化的测试请求
+    payload = {
+        'contents': [{
+            'parts': [{'text': 'test'}]
+        }],
+        'generationConfig': {
+            'maxOutputTokens': 1
+        }
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        
+        # 检查HTTP状态码
+        if response.status_code != 200:
+            return response.status_code
+        
+        # 检查响应内容是否包含错误
+        try:
+            data = response.json()
+            # 如果有error字段，说明密钥无效
+            if 'error' in data:
+                error_code = data.get('error', {}).get('code', 403)
+                return error_code
+            # 如果有candidates字段，说明成功
+            elif 'candidates' in data:
+                return 200
+            else:
+                return 403  # 未知响应格式，视为无效
+        except:
+            return 403  # JSON解析失败，视为无效
+            
+    except Exception:
+        return -1
+
+def _validate_openai_key(kv: str) -> int:
+    """使用实际聊天API验证OpenAI密钥"""
+    import requests
+    
+    headers = {
+        'Authorization': f'Bearer {kv}',
+        'Content-Type': 'application/json'
+    }
+    
+    # 使用最便宜的模型进行最小测试
+    payload = {
+        'model': 'gpt-3.5-turbo',
+        'messages': [{'role': 'user', 'content': 'hi'}],
+        'max_tokens': 1
+    }
+    
+    try:
+        response = requests.post(
+            'https://api.openai.com/v1/chat/completions',
+            headers=headers,
+            json=payload,
+            timeout=15
+        )
+        
+        # 检查HTTP状态码
+        if response.status_code == 200:
+            return 200
+        elif response.status_code == 401:
+            return 401  # Invalid API key
+        elif response.status_code == 429:
+            return 429  # Rate limited or quota exceeded
+        elif response.status_code == 403:
+            return 403  # Forbidden
+        else:
+            return response.status_code
+            
+    except Exception:
+        return -1
+
+def _validate_anthropic_key(kv: str) -> int:
+    """使用实际消息API验证Anthropic密钥"""
+    import requests
+    
+    headers = {
+        'x-api-key': kv,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+    }
+    
+    # 使用Claude最小测试
+    payload = {
+        'model': 'claude-3-haiku-20240307',
+        'max_tokens': 1,
+        'messages': [{'role': 'user', 'content': 'hi'}]
+    }
+    
+    try:
+        response = requests.post(
+            'https://api.anthropic.com/v1/messages',
+            headers=headers,
+            json=payload,
+            timeout=15
+        )
+        
+        # 检查HTTP状态码和响应内容
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                # 检查是否有正常的内容响应
+                if 'content' in data and data.get('content'):
+                    return 200
+                else:
+                    return 403
+            except:
+                return 403
+        elif response.status_code == 401:
+            return 401  # Invalid API key
+        elif response.status_code == 429:
+            return 429  # Rate limited
+        elif response.status_code == 403:
+            return 403  # Forbidden
+        else:
+            return response.status_code
+            
+    except Exception:
+        return -1
+
 def validate_key_once(kv: str, kt: str) -> int:
     kt = (kt or '').lower()
     
-    # 特殊处理OpenRouter - 使用实际聊天API验证
+    # 所有模型都使用实际API验证（更准确）
     if kt == 'openrouter':
         return _validate_openrouter_key(kv)
+    elif kt == 'gemini':
+        return _validate_gemini_key(kv)
+    elif kt == 'openai':
+        return _validate_openai_key(kv)
+    elif kt == 'anthropic':
+        return _validate_anthropic_key(kv)
     
-    cfg = VALIDATE_CFG.get(kt)
-    if not cfg:
-        return -1
-    try:
-        if kt == 'gemini':
-            url = f"{cfg['url']}?key={urlreq.quote(kv)}"
-            code, _ = _http_get(url, None, 10)
-        else:
-            code, _ = _http_get(cfg['url'], None, 10)  # build Request manually to add headers
-            # Re-do with headers (urllib doesn't allow headers on _http_get currently for custom)
-            req = urlreq.Request(cfg['url'])
-            for hk, hv in cfg['headers'](kv).items():
-                req.add_header(hk, hv)
-            with urlreq.urlopen(req, timeout=10) as resp:
-                code = resp.status
-        return int(code)
-    except urlerr.HTTPError as e:
-        return int(e.code)
-    except Exception:
-        return -1
+    # 未知类型
+    return -1
 
 
 def _update_key_status(kv: str, status_code: int, kt: str):
