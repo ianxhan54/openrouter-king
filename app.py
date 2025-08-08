@@ -17,7 +17,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 
 # 管理员密码（按你的要求硬编码）
-ADMIN_PASSWORD = 'Lcg040510.'
+ADMIN_PASSWORD = 'Kuns123456.'
 
 import sqlite3, os, json, threading, time, re, requests, random
 from urllib import request as urlreq, error as urlerr
