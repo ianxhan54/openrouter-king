@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-OpenRouter Scanner - 现代化Web版
-完全通过Web界面配置和管理
+Web Scanner - 极简版（自动扫描 + 内置查询 + 内置Tokens）
+- 部署即自动开始扫描
+- 页面仅用于查看和复制Key（四平台分区）
 """
 
-from flask import Flask, render_template, jsonify, request, send_from_directory
+from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO
 import threading
 import time
 import re
@@ -16,23 +17,26 @@ import requests
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 import os
-import base64
 import random
 
+# 优先使用项目配置中的GitHub Tokens（如存在），否则使用代码内置
+try:
+    from common.config import Config as ProjectConfig  # 可选依赖
+    PROJECT_TOKENS: List[str] = list(ProjectConfig.GITHUB_TOKENS or [])
+except Exception:
+    PROJECT_TOKENS = []
+
+# 如需彻底内置，可在此列表放入固定tokens；默认留空以避免泄漏
+EMBEDDED_GITHUB_TOKENS: List[str] = []  # e.g. ["ghp_xxx", "ghp_yyy"]
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'openrouter-scanner-secret-key'
+app.config['SECRET_KEY'] = 'lightweight-web-scanner'
 
-# 允许的跨域来源（以逗号分隔），未设置则允许所有
-ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', '*')
-if ALLOWED_ORIGINS and ALLOWED_ORIGINS != '*':
-    CORS(app, resources={r"/*": {"origins": [o.strip() for o in ALLOWED_ORIGINS.split(',') if o.strip()]}})
-else:
-    CORS(app)
-
+# 允许所有跨域（可按需收紧）
+CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ============ Server/Env Config ============
-ADMIN_BEARER = os.environ.get('ADMIN_BEARER')
 DB_PATH = os.environ.get('SCANNER_DB_PATH', 'scanner.db')
 OPENROUTER_VALIDATION_ENDPOINT = os.environ.get(
     'OPENROUTER_VALIDATION_ENDPOINT',
@@ -46,7 +50,6 @@ DEBUG = os.environ.get('DEBUG', 'false').lower() in ('1', 'true', 'yes')
 app_start_time = datetime.now()
 scanner_start_time: Optional[datetime] = None
 
-# Token 状态跟踪（内存）
 token_status: Dict[str, Dict[str, Any]] = {}
 
 def mark_token_status(token: str, status: str, code: Optional[int] = None):
@@ -59,11 +62,11 @@ def mark_token_status(token: str, status: str, code: Optional[int] = None):
     except Exception:
         pass
 
-# 全局变量
 scanner_thread = None
 scanner_running = False
 config = {
-    'github_tokens': [],
+    # 内置GitHub Tokens：优先项目配置，其次代码内置
+    'github_tokens': PROJECT_TOKENS or EMBEDDED_GITHUB_TOKENS,
     'scan_queries': [
         # OpenRouter
         '"sk-or-v1-" extension:json',
@@ -187,13 +190,8 @@ def _config_get(key: str, default: Any = None) -> Any:
 
 
 def load_persisted_config():
-    global config
-    persisted = _config_get('web_config', None)
-    if isinstance(persisted, dict):
-        # 只更新存在的键，避免结构变化导致 KeyError
-        for k in list(config.keys()):
-            if k in persisted:
-                config[k] = persisted[k]
+    """极简模式：不从持久层覆盖内置的查询与tokens。"""
+    return
 
 
 # 简单指数退避
@@ -418,16 +416,10 @@ def extract_openrouter_keys(content: str) -> List[str]:
     pattern = r'(sk-or-[A-Za-z0-9\-_]{20,60})'
     return list(set(re.findall(pattern, content)))
 
-# 路径黑名单判断
 def is_blacklisted_path(path: str) -> bool:
     bl = config.get('path_blacklist') or []
     p = (path or '').lower()
     return any(token in p for token in bl)
-
-    pattern = r'(sk-or-[A-Za-z0-9\-_]{20,60})'
-    keys = re.findall(pattern, content)
-    # 去重
-    return list(set(keys))
 
 # 日志记录
 def log_message(message: str, level: str = "info"):
@@ -499,9 +491,9 @@ def scanner_worker():
             if not results:
                 continue
 
-                for item in results[:config['max_results_per_query']]:
-                    if not scanner_running:
-                        break
+            for item in results[:config['max_results_per_query']]:
+                if not scanner_running:
+                    break
 
                     # 路径黑名单过滤
                     if is_blacklisted_path(item.get('path') or ''):
@@ -573,73 +565,15 @@ def scanner_worker():
         log_message(f"扫描完成，{config['scan_interval']}秒后继续", "info")
         time.sleep(config['scan_interval'])
 
-# 简单的管理口令校验
-from functools import wraps
-
-def require_admin(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        if not ADMIN_BEARER:
-            return f(*args, **kwargs)
-        auth = request.headers.get('Authorization', '')
-        if auth.startswith('Bearer '):
-            token = auth.split(' ', 1)[1].strip()
-            if token == ADMIN_BEARER:
-                return f(*args, **kwargs)
-        return jsonify({'error': 'unauthorized'}), 401
-    return wrapper
-
-# Flask 路由
+"""Flask 路由（极简）」"""
 @app.route('/')
 def index():
     """主页"""
     return render_template('index.html')
 
-@app.route('/api/config', methods=['GET', 'POST'])
-@require_admin
-def api_config():
-    """获取/更新配置（POST 需管理口令）"""
-    global config
-
-    if request.method == 'POST':
-        data = request.json or {}
-        config.update(data)
-        save_persisted_config()
-        return jsonify({'status': 'success', 'config': config})
-
-    return jsonify(config)
-
-@app.route('/api/start', methods=['POST'])
-@require_admin
-def start_scan():
-    """开始扫描（需管理口令）"""
-    global scanner_thread, scanner_running
-
-    if scanner_running:
-        return jsonify({'status': 'already_running'})
-
-    scanner_running = True
-    global scanner_start_time
-    scanner_start_time = datetime.now()
-    scanner_thread = threading.Thread(target=scanner_worker, daemon=True)
-    scanner_thread.start()
-
-    log_message("🚀 扫描已启动", "success")
-    return jsonify({'status': 'started'})
-
-@app.route('/api/stop', methods=['POST'])
-@require_admin
-def stop_scan():
-    """停止扫描（需管理口令）"""
-    global scanner_running
-
-    scanner_running = False
-    log_message("⏹️ 扫描已停止", "warning")
-    return jsonify({'status': 'stopped'})
-
 @app.route('/api/keys', methods=['GET'])
 def get_keys():
-    """获取所有发现的 keys"""
+    """获取所有有效 keys"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
@@ -647,13 +581,16 @@ def get_keys():
         FROM keys
         ORDER BY found_at DESC
     """)
+    rows = c.fetchall()
+    conn.close()
 
     keys = []
-    for row in c.fetchall():
+    for row in rows:
+        k = row[0] or ''
         keys.append({
-            'key': row[0],
+            'key': k,
             'type': row[1],
-            'key_display': row[0][:15] + '...' + row[0][-5:],
+            'key_display': (k[:15] + '...' + k[-5:]) if len(k) > 20 else k,
             'balance': row[2],
             'limit': row[3],
             'is_free_tier': row[4],
@@ -662,9 +599,40 @@ def get_keys():
             'found_at': row[7],
             'last_checked': row[8]
         })
-
-    conn.close()
     return jsonify(keys)
+
+@app.route('/api/keys_grouped', methods=['GET'])
+def get_keys_grouped():
+    """按平台分组返回 keys"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        SELECT key_value, key_type, balance, limit_amount, is_free_tier, source_repo, source_url, found_at, last_checked
+        FROM keys
+        ORDER BY found_at DESC
+    """)
+    rows = c.fetchall()
+    conn.close()
+
+    grouped: Dict[str, List[Dict[str, Any]]] = {"openrouter": [], "openai": [], "anthropic": [], "gemini": []}
+    for row in rows:
+        k = row[0] or ''
+        ktype = (row[1] or '').lower()
+        if ktype not in grouped:
+            grouped[ktype] = []
+        grouped[ktype].append({
+            'key': k,
+            'type': row[1],
+            'key_display': (k[:15] + '...' + k[-5:]) if len(k) > 20 else k,
+            'balance': row[2],
+            'limit': row[3],
+            'is_free_tier': row[4],
+            'source_repo': row[5],
+            'source_url': row[6],
+            'found_at': row[7],
+            'last_checked': row[8]
+        })
+    return jsonify(grouped)
 
 @app.route('/api/logs', methods=['GET'])
 def get_logs():
@@ -688,7 +656,6 @@ def get_logs():
 
     conn.close()
     return jsonify(logs)
-@app.route('/api/health', methods=['GET'])
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
     """返回分组统计和累计扫描数量"""
@@ -750,15 +717,28 @@ def health():
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
-    """获取扫描状态"""
-    return jsonify({
-        'running': scanner_running,
-        'tokens_count': len(config['github_tokens']),
-        'queries_count': len(config['scan_queries'])
-    })
+    """返回是否正在运行"""
+    return jsonify({'running': scanner_running})
 
 if __name__ == '__main__':
+    # 初始化DB
     init_db()
-    load_persisted_config()
-
+    # 自动启动扫描线程（部署即开始）
+    scanner_running = True
+    scanner_start_time = datetime.now()
+    scanner_thread = threading.Thread(target=scanner_worker, daemon=True)
+    scanner_thread.start()
+    # 启动Web服务
     socketio.run(app, host=HOST, port=PORT, debug=DEBUG)
+
+# 确保作为WSGI运行时也会自动启动扫描（如 gunicorn/flask --app web_scanner.py run）
+@app.before_first_request
+def _auto_start_scanner():
+    global scanner_running, scanner_thread, scanner_start_time
+    if scanner_running:
+        return
+    init_db()
+    scanner_running = True
+    scanner_start_time = datetime.now()
+    scanner_thread = threading.Thread(target=scanner_worker, daemon=True)
+    scanner_thread.start()

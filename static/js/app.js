@@ -1,3 +1,177 @@
+// Minimal Frontend for Key Scanner
+// - Auto-refresh grouped keys
+// - Copy per-provider or copy all
+
+const providers = ["openrouter", "openai", "anthropic", "gemini"];
+
+function $(sel) {
+  return document.querySelector(sel);
+}
+
+function showNotification(text, type = "info") {
+  const n = $("#notification");
+  if (!n) return;
+  n.textContent = text;
+  n.className = `notification ${type}`;
+  n.style.opacity = "1";
+  setTimeout(() => (n.style.opacity = "0"), 2000);
+}
+
+function copyToClipboard(text) {
+  if (!text) return;
+  navigator.clipboard
+    .writeText(text)
+    .then(() => showNotification("已复制到剪贴板 ✅", "success"))
+    .catch(() => showNotification("复制失败 ❌", "error"));
+}
+
+async function fetchGroupedKeys() {
+  try {
+    // Prefer grouped endpoint
+    let res = await fetch("/api/keys_grouped");
+    if (res.ok) return await res.json();
+  } catch (e) {}
+
+  // Fallback to flat list and group on client
+  try {
+    const res = await fetch("/api/keys");
+    const list = await res.json();
+    const grouped = { openrouter: [], openai: [], anthropic: [], gemini: [] };
+    (list || []).forEach((k) => {
+      const t = (k.type || "").toLowerCase();
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(k);
+    });
+    return grouped;
+  } catch (e) {
+    return { openrouter: [], openai: [], anthropic: [], gemini: [] };
+  }
+}
+
+function providerTitle(p) {
+  switch (p) {
+    case "openrouter":
+      return "OpenRouter";
+    case "openai":
+      return "OpenAI";
+    case "anthropic":
+      return "Anthropic";
+    case "gemini":
+      return "Gemini";
+    default:
+      return p;
+  }
+}
+
+function renderGroupedKeys(grouped) {
+  const root = $("#groupedKeys");
+  if (!root) return;
+
+  let total = 0;
+  providers.forEach((p) => (total += (grouped[p] || []).length));
+  if (!total) {
+    root.innerHTML = `
+      <div class="empty-state">
+        <span class="empty-icon">🔍</span>
+        <p>暂无发现的Keys</p>
+        <small>服务已自动开始扫描，无需操作</small>
+      </div>`;
+    return;
+  }
+
+  const sections = providers
+    .map((p) => {
+      const items = grouped[p] || [];
+      const listHtml = items
+        .map((k) => {
+          const keyDisplay = k.key_display || k.key || "";
+          const source = k.source_url ? `<a class="btn btn-xs btn-outline" href="${k.source_url}" target="_blank">来源</a>` : "";
+          return `
+            <div class="key-item">
+              <div class="key-main">
+                <div class="key-row">
+                  <span class="key-text" title="点击复制">${keyDisplay}</span>
+                  <div class="key-actions">
+                    <button class="btn btn-xs" data-copy="${k.key}">复制</button>
+                    ${source}
+                  </div>
+                </div>
+              </div>
+            </div>`;
+        })
+        .join("");
+
+      return `
+        <div class="provider-section">
+          <div class="provider-header">
+            <h3>${providerTitle(p)} <small>(${items.length})</small></h3>
+            <div class="actions">
+              <button class="btn btn-sm" data-copy-provider="${p}">复制该类别全部</button>
+            </div>
+          </div>
+          <div class="provider-list">${listHtml || "<div class=\"empty-state\"><p>暂无</p></div>"}</div>
+        </div>`;
+    })
+    .join("");
+
+  root.innerHTML = sections;
+
+  // Bind copy buttons
+  root.querySelectorAll("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      copyToClipboard(btn.getAttribute("data-copy") || "");
+    });
+  });
+  // Click on key text also copies
+  root.querySelectorAll(".key-text").forEach((el) => {
+    el.addEventListener("click", () => {
+      const parent = el.closest(".key-item");
+      const btn = parent?.querySelector("[data-copy]");
+      if (btn) copyToClipboard(btn.getAttribute("data-copy") || "");
+    });
+  });
+  // Bind provider copy
+  root.querySelectorAll("[data-copy-provider]").forEach((btn) => {
+    btn.addEventListener("click", () => copyProvider(btn.getAttribute("data-copy-provider")));
+  });
+}
+
+async function refresh() {
+  const grouped = await fetchGroupedKeys();
+  renderGroupedKeys(grouped);
+}
+
+async function copyAll() {
+  const grouped = await fetchGroupedKeys();
+  const all = providers.flatMap((p) => (grouped[p] || []).map((k) => k.key)).filter(Boolean);
+  if (!all.length) return showNotification("没有可复制的Key", "warning");
+  copyToClipboard(all.join("\n"));
+}
+
+async function copyProvider(provider) {
+  const grouped = await fetchGroupedKeys();
+  const list = (grouped[provider] || []).map((k) => k.key).filter(Boolean);
+  if (!list.length) return showNotification("该类别暂无Key", "warning");
+  copyToClipboard(list.join("\n"));
+}
+
+function initSocket() {
+  try {
+    const socket = io();
+    socket.on("new_key", () => refresh());
+    socket.on("log", () => {});
+  } catch (e) {}
+}
+
+window.copyAll = copyAll;
+
+window.addEventListener("DOMContentLoaded", () => {
+  refresh();
+  initSocket();
+  setInterval(refresh, 60000); // refresh every 60s
+});
+
 // OpenRouter Scanner Frontend Logic
 // Handles config, scanning controls, keys rendering, logs, charts, and copy/export
 

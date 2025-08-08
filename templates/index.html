@@ -3,142 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenRouter Scanner - 现代化Web版</title>
+    <title>Key Scanner - 极简版</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
-        <!-- 头部 -->
+        <!-- 头部（极简） -->
         <header class="hero">
-            <h1 class="neon">🔍 OpenRouter Scanner</h1>
-            <div class="status-bar">
-                <span class="status-indicator neon" id="statusIndicator">
-                    <span class="status-dot"></span>
-                    <span id="statusText" class="neon">未运行</span>
-                </span>
-                <div class="stats">
-                    <span>发现Keys: <strong id="totalKeys">0</strong></span>
-                    <span>有效Keys: <strong id="validKeys">0</strong></span>
-                    <span>总余额: $<strong id="totalBalance">0.00</strong></span>
-                    <span>累计扫描Keys: <strong id="scannedTotal">0</strong></span>
-                </div>
-                </div>
-                <div class="stats" style="margin-top:8px;">
-                    <span>Token 可用性: <strong id="tokensOk">0</strong>/<strong id="tokensTotal">0</strong>（限流: <strong id="tokensLimited">0</strong>）</span>
-                </div>
-                <div class="stats" style="margin-top:8px;">
-                    <span>运行时间: <strong id="appUptime">0:00:00</strong> / 扫描运行: <strong id="scanUptime">0:00:00</strong></span>
-                </div>
-
-                <div class="stats" style="margin-top:8px;">
-                    <span>扫描速率: <strong id="scanRate">0</strong> keys/min</span>
-                </div>
-
-
-                <div class="stats" style="margin-top:8px;">
-                    <canvas id="tokenRing" width="110" height="110" style="background:transparent"></canvas>
-                </div>
-
+            <h1 class="neon">🔍 Key Scanner</h1>
+            <div class="stats" style="margin-top:6px;">
+                <span id="statusText" class="neon">服务已部署，自动扫描中…</span>
             </div>
         </header>
 
-        <!-- 主内容区 -->
+        <!-- 主内容区（极简布局） -->
         <div class="main-content">
-            <!-- 左侧控制面板 -->
-            <div class="control-panel">
-                <!-- 配置区 -->
-                <div class="card">
-                    <h2>🔧 配置设置</h2>
-                    <div class="form-group">
-                        <label>GitHub Tokens</label>
-                        <textarea id="githubTokens" placeholder="输入GitHub tokens，每行一个" rows="3"></textarea>
-                        <small>在 <a href="https://github.com/settings/tokens" target="_blank">GitHub Settings</a> 创建token</small>
-                    </div>
-                    <div class="form-group">
-                        <label>搜索查询</label>
-                        <textarea id="searchQueries" placeholder='例如: "sk-or-v1-" extension:json' rows="4"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>扫描间隔 (秒)</label>
-                        <input type="number" id="scanInterval" value="60" min="30">
-                    </div>
-                    <div class="form-group">
-                        <label>每个查询最大结果数</label>
-                        <input type="number" id="maxResults" value="100" min="10" max="1000">
-                    </div>
-                    <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
-                </div>
-
-                <!-- 控制按钮 -->
-                <div class="card">
-                    <h2>🎮 扫描控制</h2>
-                    <div class="button-group">
-                        <button class="btn btn-success" onclick="startScan()" id="startBtn">
-                            <span class="icon">▶️</span> 开始扫描
-                        </button>
-                        <button class="btn btn-danger" onclick="stopScan()" id="stopBtn" disabled>
-                            <span class="icon">⏹️</span> 停止扫描
-                        </button>
-                        <button class="btn btn-warning" onclick="refreshKeys()">
-                            <span class="icon">🔄</span> 刷新列表
-                        </button>
-                    </div>
-                </div>
-
-                <!-- 日志区 -->
-                <div class="card logs-card">
-                    <h2>📋 实时日志</h2>
-                    <div class="logs-container" id="logsContainer"></div>
-                </div>
-            </div>
-
-            <!-- 右侧Keys展示区 -->
-            <div class="keys-panel">
-                <!-- 统计图表 -->
-                <div class="card chart-card">
-                    <h2>📊 统计概览</h2>
-                    <canvas id="balanceChart"></canvas>
-                </div>
-                <!-- 趋势图表 -->
-                <div class="card chart-card">
-                    <h2>📈 扫描趋势</h2>
-                    <canvas id="trendChart"></canvas>
-                </div>
-
-
-                <!-- Keys列表 -->
+            <div class="keys-panel" style="width:100%">
+                <!-- 四平台分组列表 -->
                 <div class="card">
                     <div class="card-header">
-                        <h2>🔑 发现的Keys</h2>
+                        <h2>🔑 发现的Keys（按平台分组）</h2>
                         <div class="actions">
-                            <button class="btn btn-sm btn-outline" onclick="exportKeys()">
-                                📥 导出
-                            </button>
-                            <button class="btn btn-sm btn-success" onclick="copyValidKeys()">
-                                📋 复制有效Keys
-                            </button>
+                            <button class="btn btn-sm btn-success" onclick="copyAll()">📋 一键复制全部</button>
                         </div>
                     </div>
-                    <div class="search-bar">
-                        <input type="text" id="keySearch" placeholder="搜索Keys..." onkeyup="filterKeys()">
-                        <select id="keyFilter" onchange="filterKeys()">
-                            <option value="all">全部</option>
-                            <option value="valid">有效</option>
-                            <option value="balance">有余额</option>
-                            <option value="free">免费层</option>
-                            <option value="type:openrouter">仅 OpenRouter</option>
-                            <option value="type:openai">仅 OpenAI</option>
-                            <option value="type:anthropic">仅 Anthropic</option>
-                            <option value="type:gemini">仅 Gemini</option>
-                        </select>
-                    </div>
-                    <div class="keys-list" id="keysList">
+                    <div class="keys-list" id="groupedKeys">
                         <div class="empty-state">
                             <span class="empty-icon">🔍</span>
                             <p>暂无发现的Keys</p>
-                            <small>开始扫描以发现OpenRouter API Keys</small>
+                            <small>服务已自动开始扫描，无需操作</small>
                         </div>
                     </div>
                 </div>
