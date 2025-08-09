@@ -57,11 +57,14 @@ init_db()
 # ---- Default scan queries - 重新分配比例: OpenRouter 40%, Gemini 40%, OpenAI 10%, Claude 10% ----
 # 基础查询模板
 BASE_QUERIES = [
-    # API Key 前缀
-    'AIza', 'sk-or-v1-', 'sk-or-', 'sk-proj-', 'sk-ant-', 'sk-',
-    # 变量名
-    'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY',
-    'GOOGLE_API_KEY', 'CLAUDE_API_KEY', 'API_KEY', 'OPENAI_KEY'
+    # OpenRouter 重点关注 (40%)
+    'sk-or-v1-', 'sk-or-', 'OPENROUTER_API_KEY', 'openrouter', 'sk-or-v1', 'sk-or',
+    # Gemini 查询 (40%)
+    'AIza', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'gemini', 'google_api',
+    # OpenAI 查询 (10%)
+    'sk-proj-', 'OPENAI_API_KEY',
+    # Anthropic 查询 (10%)
+    'sk-ant-', 'ANTHROPIC_API_KEY'
 ]
 
 # 文件类型
@@ -80,24 +83,42 @@ REPO_FEATURES = [
 ]
 
 def generate_dynamic_queries(cycle_count):
-    """动态生成多样化的查询"""
+    """动态生成多样化的查询，重点关注OpenRouter"""
     import random
 
     queries = []
 
-    # 1. 基础组合查询（高命中率）
+    # 分类BASE_QUERIES
+    openrouter_patterns = ['sk-or-v1-', 'sk-or-', 'OPENROUTER_API_KEY', 'openrouter', 'sk-or-v1', 'sk-or']
+    gemini_patterns = ['AIza', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'gemini', 'google_api']
+    openai_patterns = ['sk-proj-', 'OPENAI_API_KEY']
+    anthropic_patterns = ['sk-ant-', 'ANTHROPIC_API_KEY']
+
+    # 1. OpenRouter重点查询 (40% = 10个)
     for i in range(10):
-        key_pattern = random.choice(BASE_QUERIES)
+        key_pattern = random.choice(openrouter_patterns)
         file_type = random.choice(FILE_TYPES)
         queries.append(f'"{key_pattern}" {file_type}')
 
-    # 2. 仓库特征查询（发现新仓库）
-    for i in range(5):
-        key_pattern = random.choice(BASE_QUERIES)
-        repo_feature = random.choice(REPO_FEATURES)
-        queries.append(f'"{key_pattern}" {repo_feature}')
+    # 2. Gemini查询 (40% = 10个)
+    for i in range(10):
+        key_pattern = random.choice(gemini_patterns)
+        file_type = random.choice(FILE_TYPES)
+        queries.append(f'"{key_pattern}" {file_type}')
 
-    # 3. 时间范围查询（获取2年内的内容）
+    # 3. OpenAI查询 (10% = 3个)
+    for i in range(3):
+        key_pattern = random.choice(openai_patterns)
+        file_type = random.choice(FILE_TYPES)
+        queries.append(f'"{key_pattern}" {file_type}')
+
+    # 4. Anthropic查询 (10% = 2个)
+    for i in range(2):
+        key_pattern = random.choice(anthropic_patterns)
+        file_type = random.choice(FILE_TYPES)
+        queries.append(f'"{key_pattern}" {file_type}')
+
+    # 5. 时间范围查询（获取2年内的内容）
     from datetime import datetime, timedelta
 
     # 计算720天前的日期
@@ -112,54 +133,49 @@ def generate_dynamic_queries(cycle_count):
         f'pushed:>{days_180_ago}',    # 6个月内推送
     ]
 
-    for i in range(5):
-        key_pattern = random.choice(BASE_QUERIES)
-        time_range = random.choice(time_ranges)
-        queries.append(f'"{key_pattern}" {time_range}')
-
-    # 4. 组合查询（更精确，包含时间过滤）
-    for i in range(5):
-        key_pattern = random.choice(BASE_QUERIES)
-        file_type = random.choice(FILE_TYPES)
-
-        # 50%概率添加时间过滤
-        if random.random() < 0.5:
-            time_range = random.choice(time_ranges)
-            queries.append(f'"{key_pattern}" {file_type} {time_range}')
-        else:
-            repo_feature = random.choice(REPO_FEATURES)
-            queries.append(f'"{key_pattern}" {file_type} {repo_feature}')
+    # 注意：总共25个查询，已经分配完毕
+    # OpenRouter: 10个 (40%)
+    # Gemini: 10个 (40%)
+    # OpenAI: 3个 (12%)
+    # Anthropic: 2个 (8%)
 
     logging.info(f"🎲 Generated {len(queries)} dynamic queries for cycle {cycle_count}")
     return queries
 
-# 保留默认查询作为备用
+# 重新设计查询分布：OpenRouter 40%, Gemini 40%, OpenAI 10%, Anthropic 10%
 DEFAULT_QUERIES = [
-    'AIza filename:.env',
+    # ========== OpenRouter 专项查询 (40% = 10个) ==========
+    '"sk-or-v1-" filename:.env',
+    '"sk-or-" filename:.env',
+    '"OPENROUTER_API_KEY" filename:.env',
+    '"sk-or-v1-" extension:py',
+    '"sk-or-" extension:js',
+    '"sk-or-" filename:.env.local',
+    '"sk-or-" filename:.env.production',
+    '"openrouter" extension:env',
+    '"sk-or-v1-" extension:json',
+    '"OPENROUTER_API_KEY" extension:py',
+
+    # ========== Gemini 查询 (40% = 10个) ==========
+    '"AIza" filename:.env',
     '"GEMINI_API_KEY" filename:.env',
     '"GOOGLE_API_KEY" filename:.env',
-    'AIza extension:js',
-    'AIza extension:py',
+    '"AIza" extension:js',
+    '"AIza" extension:py',
+    '"GEMINI_API_KEY" extension:py',
+    '"GOOGLE_API_KEY" extension:js',
+    '"AIza" filename:.env.local',
+    '"AIza" filename:.env.production',
+    '"gemini" extension:env',
+
+    # ========== OpenAI 查询 (10% = 3个) ==========
+    '"sk-proj-" filename:.env',
     '"OPENAI_API_KEY" filename:.env',
-    '"sk-proj-" extension:env',
-    '"sk-" filename:.env.production',
-    '"sk-" filename:.env.local',
-    'openai.api_key extension:py',
-    '"sk-" extension:js',
-    '"ANTHROPIC_API_KEY" filename:.env',
-    '"sk-ant-" extension:env',
-    '"sk-ant-" extension:py',
-    '"CLAUDE_API_KEY" filename:.env',
-    '"OPENROUTER_API_KEY" filename:.env',
-    '"sk-or-v1-" extension:env',
-    '"sk-or-" filename:.env',
-    'filename:.env',
-    'filename:.env.sample',
-    'filename:config.env',
-    'filename:.env.example',
-    'filename:.env.template',
-    'filename:.env.dist',
-    'filename:.env.backup'
+    '"sk-proj-" extension:py',
+
+    # ========== Anthropic 查询 (10% = 2个) ==========
+    '"sk-ant-" filename:.env',
+    '"ANTHROPIC_API_KEY" filename:.env'
 ]
 
 def ensure_defaults():
@@ -561,10 +577,14 @@ RAW_MAIN = 'https://raw.githubusercontent.com/{repo}/main/{path}'
 RAW_MASTER = 'https://raw.githubusercontent.com/{repo}/master/{path}'
 
 PROVIDER_PATTERNS = {
-    'openrouter': re.compile(r'(sk-or-[A-Za-z0-9\-_]{20,80})'),
-    'openai': re.compile(r'(sk-[A-Za-z0-9]{20,60})'),
+    # OpenRouter - 支持新旧格式，更宽泛的匹配
+    'openrouter': re.compile(r'(sk-or-v1-[A-Za-z0-9\-_]{20,100}|sk-or-[A-Za-z0-9\-_]{20,80})'),
+    # OpenAI - 更精确的匹配，避免误判
+    'openai': re.compile(r'(sk-proj-[A-Za-z0-9\-_]{20,100}|sk-[A-Za-z0-9]{48,60})'),
+    # Anthropic - 保持原有模式
     'anthropic': re.compile(r'(sk-ant-[A-Za-z0-9\-_]{20,80})'),
-    'gemini': re.compile(r'(AIza[0-9A-Za-z\-_]{20,80})')
+    # Gemini - 更严格的长度要求，减少误判
+    'gemini': re.compile(r'(AIza[0-9A-Za-z\-_]{35,80})')
 }
 
 BLACKLIST = ['docs','doc','example','examples','sample','samples','test','tests','spec']
