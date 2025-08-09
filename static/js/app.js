@@ -10,7 +10,7 @@
   let sortKey='last', sortDir='desc';
   let autoRefreshInterval = null;
   let autoRefreshEnabled = true;
-  let refreshIntervalSeconds = 5; // 默认5秒刷新
+  let refreshIntervalSeconds = 5; // 5秒快速刷新，确保实时更新
 
   async function fetchJSON(url){ 
     try {
@@ -28,22 +28,95 @@
         }
       }); 
       if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`);
-      return r.json(); 
+      const data = await r.json();
+      console.log(`🌐 Fresh data from ${url}:`, data);
+      return data;
     } catch(e) {
       console.error('Fetch error:', e);
       throw e;
     }
   }
 
-  async function loadStats(){ 
+  async function loadStats(){
     try {
-      cache.stats = await fetchJSON('/api/stats'); 
-      renderTiles(); 
-      renderTrend(); 
-      renderBadges(); 
+      console.log('🔄 Loading stats at', new Date().toLocaleTimeString());
+      const newStats = await fetchJSON('/api/stats');
+      console.log('📊 Raw API response:', JSON.stringify(newStats, null, 2));
+
+      // 验证API数据
+      const apiTotal = (newStats.by_type?.openrouter || 0) + (newStats.by_type?.openai || 0) + (newStats.by_type?.anthropic || 0) + (newStats.by_type?.gemini || 0);
+      console.log('📊 API data verification:', {
+        by_type: newStats.by_type,
+        calculated_total: apiTotal,
+        total_valid: newStats.total_valid,
+        total_429: newStats.total_429
+      });
+
+      // 强制清除旧缓存
+      cache.stats = null;
+
+      // 立即更新缓存
+      cache.stats = newStats;
+
+      // 强制更新所有数字
+      forceUpdateAllNumbers(newStats);
+
+      renderTrend();
+      renderBadges();
       $('#dot')?.classList.add('on');
+
     } catch(e) {
-      console.error('Failed to load stats:', e);
+      console.error('❌ Failed to load stats:', e);
+      $('#dot')?.classList.remove('on');
+    }
+  }
+
+  // 新增：强制更新所有数字的函数
+  function forceUpdateAllNumbers(stats) {
+    console.log('🔥 Force updating all numbers with:', stats);
+
+    // 计算总数
+    const by_type = stats.by_type || {};
+    const total = (by_type.openrouter || 0) + (by_type.openai || 0) + (by_type.anthropic || 0) + (by_type.gemini || 0);
+    const valid = stats.total_valid || 0;
+    const rate429 = stats.total_429 || 0;
+    const forbidden = stats.total_forbidden || 0;
+
+    console.log('🔥 Calculated values:', { total, valid, rate429, forbidden });
+
+    // 强制更新顶部数字
+    updateElementValue('tTotal', total);
+    updateElementValue('tValid', valid);
+    updateElementValue('t429', rate429);
+    // tForbidden元素不存在，跳过
+    // updateElementValue('tForbidden', forbidden);
+
+    // 强制更新provider badges (使用正确的ID)
+    updateElementValue('b_or', by_type.openrouter || 0);
+    updateElementValue('b_oa', by_type.openai || 0);
+    updateElementValue('b_cl', by_type.anthropic || 0);
+    updateElementValue('b_ge', by_type.gemini || 0);
+  }
+
+  // 新增：强制更新单个元素的函数
+  function updateElementValue(elementId, value) {
+    const element = document.getElementById(elementId);
+    if (element) {
+      console.log(`🔥 Updating ${elementId}: ${element.textContent} → ${value}`);
+
+      // 多种方式强制更新
+      element.textContent = value;
+      element.innerHTML = value;
+      element.innerText = value;
+
+      // 强制重绘
+      element.style.opacity = '0.99';
+      element.offsetHeight; // 触发重排
+      element.style.opacity = '1';
+
+      console.log(`🔥 ${elementId} updated result:`, element.textContent);
+    } else {
+      console.error(`❌ Element ${elementId} not found!`);
     }
   }
   
@@ -123,54 +196,44 @@
     }
   }
 
-  async function loadKeys(){ 
-    try{ 
-      cache.grouped = await fetchJSON('/api/keys_grouped'); 
-    } catch { 
+  async function loadKeys(){
+    try{
+      console.log('🔄 Loading keys...'); // 调试日志
+      const newGrouped = await fetchJSON('/api/keys_grouped');
+      console.log('🔑 Keys loaded:', newGrouped); // 调试日志
+
+      // 强制更新缓存
+      cache.grouped = newGrouped;
+    } catch {
+      console.log('⚠️ Fallback to /api/keys'); // 调试日志
       try {
-        const list=await fetchJSON('/api/keys'); 
-        const g={openrouter:[],openai:[],anthropic:[],gemini:[]}; 
+        const list=await fetchJSON('/api/keys');
+        const g={openrouter:[],openai:[],anthropic:[],gemini:[]};
         (list||[]).forEach(k=>{
-          const t=(k.type||'').toLowerCase(); 
+          const t=(k.type||'').toLowerCase();
           (g[t]||(g[t]=[])).push(k)
-        }); 
-        cache.grouped=g; 
+        });
+        cache.grouped=g;
+        console.log('🔑 Keys grouped from list:', g); // 调试日志
       } catch(e) {
-        console.error('Failed to load keys:', e);
+        console.error('❌ Failed to load keys:', e);
         cache.grouped = {openrouter:[],openai:[],anthropic:[],gemini:[]};
       }
-    } 
-    renderGrid(); 
-  }
-
-  function renderTiles(){ 
-    const s=cache.stats||{}; 
-    const total=(s.by_type?.openrouter||0)+(s.by_type?.openai||0)+(s.by_type?.anthropic||0)+(s.by_type?.gemini||0); 
-    $('#tTotal').textContent=total; 
-    
-    // 使用新的统计数据 - 所有类型的有效密钥
-    const validTotal = s.total_valid || 0;
-    const rateLimitTotal = s.total_429 || 0;
-    const forbiddenTotal = s.total_forbidden || 0;
-    
-    $('#tTotal').textContent = total;
-    $('#tValid').textContent = validTotal; 
-    $('#t429').textContent = rateLimitTotal; 
-    
-    // 如果有forbidden统计，也可以显示
-    const forbiddenTile = $('#tForbidden');
-    if(forbiddenTile) {
-      forbiddenTile.textContent = forbiddenTotal;
     }
+    renderGrid();
   }
 
-  function renderBadges(){ 
-    const s=cache.stats||{}; 
-    const bt=s.by_type||{}; 
-    $('#b_or').textContent=bt.openrouter||0; 
-    $('#b_oa').textContent=bt.openai||0; 
-    $('#b_cl').textContent=bt.anthropic||0; 
-    $('#b_ge').textContent=bt.gemini||0; 
+  // 保留renderTiles作为备用，但使用新的强制更新逻辑
+  function renderTiles(){
+    const s = cache.stats || {};
+    console.log('🔄 renderTiles called, delegating to forceUpdateAllNumbers');
+    forceUpdateAllNumbers(s);
+  }
+
+  function renderBadges(){
+    const s = cache.stats || {};
+    console.log('🔄 renderBadges called, delegating to forceUpdateAllNumbers');
+    // forceUpdateAllNumbers已经处理了badges更新，这里不需要重复
   }
 
   function renderTrend(){ 
@@ -222,10 +285,18 @@
     window.__trend.render();
   }
 
-  const fmtCurrency=(n)=>{ 
-    let x=Number(n); 
-    if(!isFinite(x)) x=0; 
-    return '$'+x.toFixed(2); 
+  const fmtCurrency=(n)=>{
+    let x=Number(n);
+    if(!isFinite(x)) x=0;
+
+    // 负数表示无限额度，显示已使用金额
+    if(x < 0) {
+      const used = Math.abs(x);
+      return `<span style="color:#10b981">$${used.toFixed(2)} <small>(unlimited)</small></span>`;
+    }
+
+    // 正数表示剩余额度
+    return '$'+x.toFixed(2);
   };
 
   function fmtStatus(k){ 
@@ -256,35 +327,42 @@
     return 0;
   }
 
-  function renderGrid(){ 
-    const g=cache.grouped||{}; 
+  function renderGrid(){
+    const g=cache.grouped||{};
     const arr=(g[currentProvider]||[]).slice();
-    
-    const filtered=arr.filter(k=>{ 
-      const st=(k.status||'').toString().toLowerCase(); 
-      if(statusFilter==='valid') return st.includes('200')||st.includes('valid'); 
-      if(statusFilter==='429') return st.includes('429'); 
-      if(statusFilter==='forbidden') return st.includes('403')||st.includes('forbidden'); 
-      if(statusFilter==='other') return !(st.includes('200')||st.includes('valid')||st.includes('429')||st.includes('403')||st.includes('forbidden')); 
-      return true; 
+    console.log(`🔄 Updating grid for ${currentProvider}, total keys:`, arr.length); // 调试日志
+
+    const filtered=arr.filter(k=>{
+      const st=(k.status||'').toString().toLowerCase();
+      if(statusFilter==='valid') return st.includes('200')||st.includes('valid');
+      if(statusFilter==='429') return st.includes('429');
+      if(statusFilter==='forbidden') return st.includes('403')||st.includes('forbidden');
+      if(statusFilter==='other') return !(st.includes('200')||st.includes('valid')||st.includes('429')||st.includes('403')||st.includes('forbidden'));
+      return true;
     });
-    
+
     // Apply sorting
-    filtered.sort((a,b)=>{ 
-      const va=getSortValue(a), vb=getSortValue(b); 
-      if(va==vb) return 0; 
-      return (va>vb?1:-1)*(sortDir==='asc'?1:-1); 
+    filtered.sort((a,b)=>{
+      const va=getSortValue(a), vb=getSortValue(b);
+      if(va==vb) return 0;
+      return (va>vb?1:-1)*(sortDir==='asc'?1:-1);
     });
-    
-    const total=filtered.length; 
-    const pages=Math.max(1, Math.ceil(total/pageSize)); 
-    if(page>pages) page=pages; 
-    const start=(page-1)*pageSize; 
+
+    const total=filtered.length;
+    const pages=Math.max(1, Math.ceil(total/pageSize));
+    if(page>pages) page=pages;
+    const start=(page-1)*pageSize;
     const items=filtered.slice(start,start+pageSize);
-    
-    $('#pgInfo').textContent=`共 ${total} 条 • 第 ${page}/${pages} 页`;
-    
-    const rows=items.map((k, idx)=>{ 
+
+    console.log(`📋 Grid updated: ${total} total, page ${page}/${pages}, showing ${items.length} items`); // 调试日志
+
+    // 强制更新分页信息
+    const pgInfoEl = $('#pgInfo');
+    if(pgInfoEl) {
+      pgInfoEl.textContent = `共 ${total} 条 • 第 ${page}/${pages} 页`;
+    }
+
+    const rows=items.map((k, idx)=>{
       const st=fmtStatus(k);
       const isOR = ((k.type||'').toLowerCase()==='openrouter') || (currentProvider==='openrouter');
       const bal = isOR? `<span class="balance">${fmtCurrency(k.balance||0)}</span>` : '';
@@ -294,10 +372,14 @@
         <td>${k.last_checked||'-'}</td>
         <td>${nextTime(k)}</td>
         <td>${isOR?fmtCurrency(k.balance||0):'-'}</td>
-      </tr>`; 
+      </tr>`;
     }).join('');
-    
-    $('#gridBody').innerHTML=rows||`<tr><td colspan="5" style="color:#9fb3c8">暂无数据</td></tr>`;
+
+    // 强制更新表格内容
+    const gridBodyEl = $('#gridBody');
+    if(gridBodyEl) {
+      gridBodyEl.innerHTML = rows||`<tr><td colspan="5" style="color:#9fb3c8">暂无数据</td></tr>`;
+    }
     window.__pageItems=items;
   }
 
@@ -318,17 +400,76 @@
       renderGrid(); 
     });
     
-    $('#clearBtn')?.addEventListener('click', ()=>{ 
-      statusFilter='all'; 
-      $('#statusSel').value='all'; 
-      page=1; 
-      renderGrid(); 
+    $('#clearBtn')?.addEventListener('click', ()=>{
+      statusFilter='all';
+      $('#statusSel').value='all';
+      page=1;
+      renderGrid();
     });
-    
+
+    // Manual refresh button - 强制刷新
+    $('#manualRefreshBtn')?.addEventListener('click', async ()=>{
+      console.log('🔄 ===== MANUAL REFRESH START =====');
+      try {
+        // 完全清除缓存
+        cache.stats = null;
+        cache.grouped = null;
+
+        // 直接获取最新数据并更新
+        console.log('🔄 Getting fresh data...');
+        const freshStats = await fetchJSON('/api/stats');
+        console.log('📊 Manual refresh - fresh stats:', freshStats);
+
+        // 立即强制更新所有数字
+        forceUpdateAllNumbers(freshStats);
+
+        await loadKeys();
+        await loadScannerStatus();
+
+        toast('数据已强制刷新');
+        console.log('✅ ===== MANUAL REFRESH COMPLETE =====');
+      } catch(e) {
+        console.error('❌ Manual refresh failed:', e);
+        toast('刷新失败');
+      }
+    });
+
+    // Test update button - 使用新的强制更新逻辑
+    $('#testUpdateBtn')?.addEventListener('click', ()=>{
+      console.log('🧪 Testing new force update system...');
+
+      // 设置测试数据
+      const testStats = {
+        by_type: { openrouter: 100, openai: 200, anthropic: 50, gemini: 300 },
+        total_valid: 123,
+        total_429: 45,
+        total_forbidden: 67
+      };
+
+      console.log('🧪 Test data:', testStats);
+
+      // 使用新的强制更新函数
+      forceUpdateAllNumbers(testStats);
+
+      // 0.5秒后测试直接DOM操作
+      setTimeout(() => {
+        console.log('🧪 Testing direct DOM manipulation...');
+        updateElementValue('tTotal', 999);
+        updateElementValue('tValid', 888);
+        updateElementValue('t429', 777);
+        updateElementValue('b_or', 111);
+        updateElementValue('b_oa', 222);
+        updateElementValue('b_cl', 333);
+        updateElementValue('b_ge', 444);
+      }, 500);
+
+      toast('测试数据已设置');
+    });
+
     // Pager
-    $('#prevPg')?.addEventListener('click', ()=>{ 
-      if(page>1){ 
-        page--; 
+    $('#prevPg')?.addEventListener('click', ()=>{
+      if(page>1){
+        page--;
         renderGrid(); 
       }
     });
@@ -616,17 +757,36 @@
     
     if(autoRefreshEnabled){
       autoRefreshInterval = setInterval(async ()=>{
-        console.log('🔄 Auto refresh executing...');
+        const timestamp = new Date().toLocaleTimeString();
+        console.log('🔄 ===== AUTO REFRESH START =====', timestamp);
         try {
-          await loadStats();
-          await loadKeys(); 
+          // 完全清除所有缓存
+          cache.stats = null;
+          cache.grouped = null;
+
+          // 强制获取最新数据
+          console.log('🔄 Step 1: Getting fresh stats...');
+          const freshStats = await fetchJSON('/api/stats');
+          console.log('📊 Fresh stats received:', freshStats);
+
+          // 立即更新数字
+          console.log('🔄 Step 2: Force updating numbers...');
+          forceUpdateAllNumbers(freshStats);
+
+          console.log('🔄 Step 3: Loading keys...');
+          await loadKeys();
+
+          console.log('🔄 Step 4: Loading scanner status...');
           await loadScannerStatus();
+
           updateAutoRefreshStatus();
+
+          console.log('✅ ===== AUTO REFRESH COMPLETE =====', new Date().toLocaleTimeString());
         } catch(e) {
-          console.error('Auto refresh failed:', e);
+          console.error('❌ Auto refresh failed:', e);
         }
       }, refreshIntervalSeconds * 1000);
-      
+
       updateAutoRefreshStatus();
       console.log(`✅ Auto refresh started (${refreshIntervalSeconds}s interval)`);
     }

